@@ -279,6 +279,21 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
   .vocab-grid{grid-template-columns:1fr 1fr}
   .rev-grid{grid-template-columns:1fr 1fr}
 }
+
+/* ── FONT SCALING — ключевые элементы контента ── */
+.ex-q,.ex-kr,.opt,.trans-inp,.blank-inp,.vt-kr,.vt-ru,.vt-ctx,
+.rule-box,.feel-box,.contrast-box,.ex-item .ex-kr,
+.exam-text,.exam-q,.pc-t,.g-form,
+textarea,input[type="text"],input[type="email"],input[type="password"] {
+  font-size: 1em;
+}
+.ex-ru,.ex-item .ex-ru,.pc-m,.g-tr,.hint-pill,.g-lbl,
+.exam-q-num,.card-hdr,.sec-badge,.ex-badge,
+.logo-sub,.logo-exam,.logo-main {
+  font-size: 0.85em;
+}
+.g-form { font-size: 1.4em; }
+.hero-title,.hh-t { font-size: 1.2em; }
 </style>
 </head>
 <body>
@@ -322,6 +337,7 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
       <div class="sync-dot syncing" id="sync-dot" title="Синхронизация..."></div>
       <span id="tb-prog" style="font-size:12px;color:var(--tx3)"></span>
       <button class="btn btn-ghost btn-sm" id="btn-home" onclick="goHome()" style="display:none">← Главная</button>
+      <button class="btn btn-ghost btn-sm" id="btn-logout" onclick="doLogout()" style="display:none;font-size:11px;color:var(--tx3)" title="Выйти">⏻</button>
     </div>
   </div>
   <div class="content" id="content"></div>
@@ -331,6 +347,7 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script>
   // Initialise Firebase immediately — runs before the main script
   (function(){
@@ -348,6 +365,7 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
       });
     }
     window.RTDB = firebase.database();
+    window.FAUTH = firebase.auth();
   })();
 </script>
 <script>
@@ -394,6 +412,7 @@ let S={
   composed:[],selOpt:null,vFlipped:new Set(),
   done:new Set(JSON.parse(localStorage.getItem("t45-done")||"[]")),
   mistakes:{},examAnswers:{},fontSize:15,teacherUnlocked:false,
+  currentUser:null,
 };
 function save(){
   localStorage.setItem("t45-done",JSON.stringify([...S.done]));
@@ -416,7 +435,7 @@ async function loadFromFirebase(){
   setSyncStatus('syncing');
   try{
     if(!window.RTDB) throw new Error('RTDB not ready');
-    const snap=await window.RTDB.ref('students/katya').get();
+    const snap=await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).get();
     if(snap.exists()){const d=snap.val();S.done=new Set(d.done||[]);S.mistakes=d.mistakes||{};}
     setSyncStatus('ok');
   }catch(e){
@@ -431,7 +450,7 @@ async function saveToFirebase(){
   setSyncStatus('syncing');
   try{
     if(!window.RTDB) throw new Error('no RTDB');
-    await window.RTDB.ref('students/katya').update({done:[...S.done],mistakes:S.mistakes,lastSeen:Date.now(),name:'Катя'});
+    await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).update({done:[...S.done],mistakes:S.mistakes,lastSeen:Date.now(),name:'Катя'});
     setSyncStatus('ok');
   }catch(e){ console.warn('Firebase save:',e.message); setSyncStatus('err'); }
 }
@@ -446,7 +465,11 @@ async function saveExamResult(section,answers,score,total){
 // ── FONT SIZE ──
 function changeFontSize(d){
   S.fontSize=Math.max(12,Math.min(22,S.fontSize+d));
+  // Применяем к html (корень) чтобы все em/rem значения пересчитались
+  document.documentElement.style.fontSize=S.fontSize+'px';
   document.documentElement.style.setProperty('--fs',S.fontSize+'px');
+  // Прямое применение к body для надёжности
+  document.body.style.fontSize=S.fontSize+'px';
   const l=document.getElementById('fs-lbl');if(l)l.textContent=S.fontSize;
   localStorage.setItem('t45-fs',S.fontSize);
 }
@@ -572,30 +595,37 @@ function renderExamResults(){
 
 // ── TEACHER ──
 function renderTeacherPage(){
-  if(!S.teacherUnlocked){
-    document.getElementById('content').innerHTML=`<div class="teacher-lock">
-      <div style="font-size:40px;margin-bottom:14px">🔒</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:6px">Кабинет учителя</div>
-      <div style="font-size:14px;color:var(--tx2);margin-bottom:18px">Введите PIN-код</div>
-      <input type="password" class="teacher-pin" id="tpin" maxlength="4" placeholder="••••" onkeydown="if(event.key==='Enter')checkPin()">
-      <div style="margin-top:14px"><button class="btn btn-p" onclick="checkPin()">Войти</button></div>
-      <div style="font-size:12px;color:var(--tx3);margin-top:10px">PIN: 1234</div>
-    </div>`;
-    setTimeout(()=>document.getElementById('tpin')?.focus(),100);return;
+  // Если вошли с email учителя — сразу открываем
+  if(isTeacher()||S.teacherUnlocked){
+    S.teacherUnlocked=true;
+    loadTeacherData();
+    return;
   }
-  loadTeacherData();
+  // Иначе — сообщение
+  document.getElementById('content').innerHTML=`<div class="teacher-lock">
+    <div style="font-size:40px;margin-bottom:14px">🔒</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">Кабинет учителя</div>
+    <div style="font-size:14px;color:var(--tx2);margin-bottom:6px">Доступ только для учителя.</div>
+    <div style="font-size:13px;color:var(--tx3)">Выйдите и войдите с аккаунтом учителя.</div>
+    <button class="btn btn-sm" style="margin-top:18px" onclick="doLogout()">Сменить аккаунт</button>
+  </div>`;
 }
-function checkPin(){
-  const v=document.getElementById('tpin')?.value;
-  if(v==='1234'){S.teacherUnlocked=true;loadTeacherData();}
-  else{const i=document.getElementById('tpin');if(i){i.style.borderColor='var(--red)';i.value='';i.placeholder='Неверный PIN';}}
-}
+function checkPin(){} // не используется
 async function loadTeacherData(){
   document.getElementById('content').innerHTML=`<div style="text-align:center;padding:32px;color:var(--tx3)">⏳ Загрузка...</div>`;
   try{
     let sData={done:[],mistakes:{}};let eResults=[];
     if(window.RTDB){
-      const sS=await window.RTDB.ref('students/katya').get();if(sS.exists())sData=sS.val();
+      const sS=await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).get();if(sS.exists()){
+      // Find student (non-teacher) data
+      const allUsers=sS.val();
+      // Pick first non-teacher user, or merge all
+      const studentKeys=Object.keys(allUsers).filter(k=>{
+        const u=allUsers[k];
+        return u.name && u.name!=='Учитель';
+      });
+      if(studentKeys.length>0) sData=allUsers[studentKeys[0]];
+    }
       const eS=await window.RTDB.ref('exam_results').orderByChild('timestamp').limitToLast(20).get();
       if(eS.exists())eS.forEach(c=>eResults.unshift({id:c.key,...c.val()}));
     }
@@ -1318,12 +1348,113 @@ function getChanceColor(pct){
 }
 
 // ── INIT ──
+// ── AUTH ──
+// Укажите email учителя — именно с него открывается кабинет
+const TEACHER_EMAIL = "vkropot@gmail.com"; // ← замените на свой!
+
+function isTeacher(){
+  return S.currentUser && S.currentUser.email === TEACHER_EMAIL;
+}
+
+function renderLoginPage(){
+  document.getElementById('btn-home').style.display='none';
+  const lb=document.getElementById('btn-logout');if(lb)lb.style.display='none';
+  document.getElementById('tb-title').textContent='TOPIK II 🇰🇷';
+  document.getElementById('tb-sub').textContent='Войдите чтобы начать';
+  document.getElementById('content').innerHTML=`
+    <div style="max-width:360px;margin:32px auto">
+      <div class="hero hero-grn" style="text-align:center;margin-bottom:20px;padding:28px">
+        <div style="font-size:40px;margin-bottom:8px">🇰🇷</div>
+        <div style="font-size:22px;font-weight:700;margin-bottom:4px">TOPIK II</div>
+        <div style="font-size:13px;opacity:.75">Подготовка к экзамену · 5 июля 2026</div>
+      </div>
+      <div class="card">
+        <div class="card-hdr">Вход в систему</div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:5px">Email</label>
+          <input id="auth-email" type="email" placeholder="your@email.com" autocomplete="email"
+            style="width:100%;padding:11px 13px;border:1px solid var(--bdr);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg);-webkit-appearance:none"
+            onkeydown="if(event.key==='Enter')document.getElementById('auth-pass').focus()">
+        </div>
+        <div style="margin-bottom:18px">
+          <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:5px">Пароль</label>
+          <input id="auth-pass" type="password" placeholder="••••••••" autocomplete="current-password"
+            style="width:100%;padding:11px 13px;border:1px solid var(--bdr);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg);-webkit-appearance:none"
+            onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <div id="auth-err" style="color:var(--red);font-size:13px;margin-bottom:12px;display:none;padding:8px 12px;background:var(--redl);border-radius:var(--r)"></div>
+        <button class="btn btn-p btn-full" onclick="doLogin()" id="login-btn">Войти →</button>
+      </div>
+      <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--tx3)">
+        Если забыли пароль — обратитесь к учителю
+      </div>
+    </div>`;
+  setTimeout(()=>document.getElementById('auth-email')?.focus(),150);
+}
+
+async function doLogin(){
+  const email=(document.getElementById('auth-email')?.value||'').trim();
+  const pass=document.getElementById('auth-pass')?.value||'';
+  const errEl=document.getElementById('auth-err');
+  const btn=document.getElementById('login-btn');
+  if(!email||!pass){showAuthErr('Введите email и пароль');return;}
+  if(btn){btn.textContent='Входим...';btn.disabled=true;}
+  try{
+    if(!window.FAUTH) throw new Error('Auth не готов — обновите страницу');
+    await window.FAUTH.signInWithEmailAndPassword(email, pass);
+    // onAuthStateChanged сам вызовет renderHome()
+  }catch(e){
+    if(btn){btn.textContent='Войти →';btn.disabled=false;}
+    const msgs={
+      'auth/user-not-found':'Пользователь не найден',
+      'auth/wrong-password':'Неверный пароль',
+      'auth/invalid-email':'Неверный формат email',
+      'auth/too-many-requests':'Слишком много попыток, подождите немного',
+      'auth/invalid-credential':'Неверный email или пароль',
+      'auth/network-request-failed':'Нет сети, проверьте подключение',
+    };
+    showAuthErr(msgs[e.code]||e.message);
+  }
+}
+
+function showAuthErr(msg){
+  const el=document.getElementById('auth-err');
+  if(el){el.textContent=msg;el.style.display='block';}
+}
+
+function doLogout(){
+  if(window.FAUTH) window.FAUTH.signOut();
+  S.currentUser=null;
+  S.teacherUnlocked=false;
+  renderLoginPage();
+}
+
 function boot(){
   const _fs=parseInt(localStorage.getItem('t45-fs')||'15');
+  document.documentElement.style.fontSize=_fs+'px';
   document.documentElement.style.setProperty('--fs',_fs+'px');
+  document.body.style.fontSize=_fs+'px';
   const _fl=document.getElementById('fs-lbl');if(_fl)_fl.textContent=_fs;
   S.fontSize=_fs;
-  loadFromFirebase().then(()=>{buildSidebar();renderHome();});
+  // Show login screen first, wait for auth state
+  renderLoginPage();
+  if(window.FAUTH){
+    window.FAUTH.onAuthStateChanged(user=>{
+      if(user){
+        S.currentUser=user;
+        loadFromFirebase().then(()=>{
+        buildSidebar();renderHome();
+        const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+      });
+      } else {
+        S.currentUser=null;
+        renderLoginPage();
+      }
+    });
+  } else {
+    // Fallback if auth not available
+    loadFromFirebase().then(()=>{buildSidebar();renderHome();});
+  }
   // Update D-day every minute
   setInterval(()=>{
     const el=document.getElementById('dday-val');
