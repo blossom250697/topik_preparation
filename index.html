@@ -659,7 +659,7 @@ function queueSave(){if(_syncTimer)clearTimeout(_syncTimer);_syncTimer=setTimeou
 async function saveExamResult(section,answers,score,total){
   try{
     if(!window.RTDB)return;
-    await window.RTDB.ref('exam_results').push({section,answers,score,total,pct:Math.round(score/total*100),timestamp:Date.now(),name:'Катя'});
+    await window.RTDB.ref('exam_results').push({section,answers,score,total,pct:Math.round(score/total*100),timestamp:Date.now(),name:getStudentName(),uid:S.currentUser?.uid||null});
   }catch(e){console.warn('Exam save:',e);}
 }
 
@@ -812,60 +812,116 @@ function renderTeacherPage(){
   </div>`;
 }
 function checkPin(){} // не используется
+// Активный ученик в кабинете учителя
+let _teacherActiveUid = null;
+
 async function loadTeacherData(){
-  document.getElementById('content').innerHTML=`<div style='text-align:center;padding:32px;color:var(--tx3)'>⏳ Loading...</div>`;
+  document.getElementById('content').innerHTML=`<div style='text-align:center;padding:32px;color:var(--tx3)'>⏳ Загрузка данных учеников...</div>`;
   try{
-    let sData={done:[],mistakes:{}};let eResults=[];
+    let allStudents={};
+    let allExams=[];
     if(window.RTDB){
-      const sS=await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).get();if(sS.exists()){
-      // Find student (non-teacher) data
-      const allUsers=sS.val();
-      // Pick first non-teacher user, or merge all
-      const studentKeys=Object.keys(allUsers).filter(k=>{
-        const u=allUsers[k];
-        return u.name && u.name!=='Учитель';
-      });
-      if(studentKeys.length>0) sData=allUsers[studentKeys[0]];
+      const sSnap=await window.RTDB.ref('students').get();
+      if(sSnap.exists()) allStudents=sSnap.val();
+      const eSnap=await window.RTDB.ref('exam_results').orderByChild('timestamp').limitToLast(50).get();
+      if(eSnap.exists()) eSnap.forEach(c=>allExams.unshift({id:c.key,...c.val()}));
     }
-      const eS=await window.RTDB.ref('exam_results').orderByChild('timestamp').limitToLast(20).get();
-      if(eS.exists())eS.forEach(c=>eResults.unshift({id:c.key,...c.val()}));
-    }
-    renderTeacherDash(sData,eResults);
+    renderTeacherDash(allStudents, allExams);
   }catch(e){
     document.getElementById('content').innerHTML=`<div style="text-align:center;padding:32px;color:var(--red)">Ошибка: ${e.message}<br><button class="btn btn-sm" style="margin-top:12px" onclick="loadTeacherData()">Повторить</button></div>`;
   }
 }
-function renderTeacherDash(sData,eResults,allStudents){
-  const done=(sData.done||[]).length;const mis=sData.mistakes||{};
-  const mSorted=Object.entries(mis).sort((a,b)=>b[1]-a[1]);
-  const total=Object.values(mis).reduce((a,b)=>a+b,0);
-  const studentEntries=Object.entries(allStudents||{});
-  let html=`<div class="hero hero-grn"><div class="hero-title">👩‍🏫 Teacher Dashboard</div><div class="hero-sub">${studentEntries.length} student(s) · Firebase</div></div>`;
-  if(studentEntries.length>1){
-    html+=`<div class="card" style="margin-bottom:14px"><div class="card-hdr">All Students</div>`;
+
+function renderTeacherDash(allStudents, allExams){
+  const entries=Object.entries(allStudents||{});
+  const studentEntries=entries.filter(([uid])=> uid !== S.currentUser?.uid);
+
+  if(!_teacherActiveUid && studentEntries.length>0) _teacherActiveUid=studentEntries[0][0];
+
+  let html=`<div class="hero hero-grn" style="padding:20px 24px">
+    <div style="font-size:18px;font-weight:700;margin-bottom:4px">👩‍🏫 Кабинет учителя</div>
+    <div style="font-size:13px;opacity:.75">${studentEntries.length} ${studentEntries.length===1?'ученик':'ученика/ов'} · Firebase</div>
+  </div>`;
+
+  if(studentEntries.length===0){
+    html+=`<div class="card" style="text-align:center;color:var(--tx3);padding:32px">
+      <div style="font-size:32px;margin-bottom:10px">👤</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Учеников пока нет</div>
+      <div style="font-size:13px">Как только Катя или Джош войдут и начнут заниматься — они появятся здесь</div>
+    </div>`;
+  } else {
+    html+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px">`;
     studentEntries.forEach(([uid,d])=>{
-      const dn=(d.done||[]).length;const pct=Math.round(dn/45*100);
+      const dn=(d.done||[]).length;
+      const pct=Math.round(dn/45*100);
       const errs=Object.values(d.mistakes||{}).reduce((a,b)=>a+b,0);
-      html+=`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--bdrl)">
-        <div style="flex:1"><div style="font-weight:700;font-size:14px">${d.name||'Student'}</div>
-        <div style="font-size:12px;color:var(--tx3)">${dn}/45 days · ${errs} errors</div></div>
-        <div style="text-align:right;font-size:13px;font-weight:700;color:var(--grn)">${pct}%</div>
-        <div style="width:50px;height:6px;background:var(--bdrl);border-radius:99px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:var(--grnm)"></div></div>
+      const isActive=uid===_teacherActiveUid;
+      const lastSeen=d.lastSeen?new Date(d.lastSeen).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'}):'—';
+      const flag=d.name==='Катя'?'🇷🇺':d.name==='Josh'||d.name==='Джош'?'🇨🇦':'👤';
+      html+=`<div onclick="selectStudent('${uid}')" style="cursor:pointer;background:var(--sur);border:2px solid ${isActive?'var(--grn)':'var(--bdrl)'};border-radius:var(--rl);padding:14px;box-shadow:${isActive?'0 0 0 3px rgba(74,161,90,.15)':'var(--sh)'}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:${isActive?'var(--grnl)':'var(--sur2)'};display:flex;align-items:center;justify-content:center;font-size:18px">${flag}</div>
+          <div>
+            <div style="font-weight:700;font-size:14px">${d.name||'Студент'}</div>
+            <div style="font-size:11px;color:var(--tx3)">была ${lastSeen}</div>
+          </div>
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:12px;color:var(--tx3)">Прогресс</span>
+            <span style="font-size:12px;font-weight:700;color:var(--grn)">${dn}/45 (${pct}%)</span>
+          </div>
+          <div style="height:6px;background:var(--bdrl);border-radius:99px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:var(--grnm)"></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span style="color:var(--tx3)">Ошибок: <strong style="color:${errs>20?'var(--red)':errs>5?'var(--gld)':'var(--grn)'}">${errs}</strong></span>
+          ${isActive?'<span style="color:var(--grn);font-weight:700">● выбран</span>':''}
+        </div>
       </div>`;
     });
     html+=`</div>`;
+
+    const activeData=allStudents[_teacherActiveUid];
+    if(activeData){
+      const studentExams=allExams.filter(r=>r.uid===_teacherActiveUid||((!r.uid)&&r.name===activeData.name));
+      html+=renderStudentDetail(activeData, studentExams);
+    }
   }
-  html+=`<div class="t-stat-grid">
-    <div class="t-stat"><div class="t-stat-n">${done}</div><div class="t-stat-l">дней / 45</div></div>
-    <div class="t-stat"><div class="t-stat-n">${Math.round(done/45*100)}%</div><div class="t-stat-l">прогресс</div></div>
-    <div class="t-stat"><div class="t-stat-n">${total}</div><div class="t-stat-l">ошибок</div></div>
-    <div class="t-stat"><div class="t-stat-n">${mSorted.length}</div><div class="t-stat-l">проблемных тем</div></div>
+
+  html+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+    <button class="btn btn-sm" onclick="loadTeacherData()">🔄 Обновить</button>
+    <button class="btn btn-sm" style="background:var(--redl);color:var(--red);border-color:var(--red)" onclick="S.teacherUnlocked=false;renderTeacherPage()">🔒 Выйти</button>
   </div>`;
+
+  document.getElementById('content').innerHTML=html;
+}
+
+function selectStudent(uid){
+  _teacherActiveUid=uid;
+  loadTeacherData();
+}
+
+function renderStudentDetail(d, examResults){
+  const done=(d.done||[]).length;
+  const mis=d.mistakes||{};
+  const mSorted=Object.entries(mis).sort((a,b)=>b[1]-a[1]);
+  const total=Object.values(mis).reduce((a,b)=>a+b,0);
+
+  let html=`<div class="card" style="border-top:3px solid var(--grn)">
+    <div class="card-hdr" style="margin-bottom:14px">📊 ${d.name||'Студент'} — детали</div>
+    <div class="t-stat-grid">
+      <div class="t-stat"><div class="t-stat-n">${done}</div><div class="t-stat-l">дней / 45</div></div>
+      <div class="t-stat"><div class="t-stat-n">${Math.round(done/45*100)}%</div><div class="t-stat-l">прогресс</div></div>
+      <div class="t-stat"><div class="t-stat-n">${total}</div><div class="t-stat-l">ошибок</div></div>
+      <div class="t-stat"><div class="t-stat-n">${mSorted.length}</div><div class="t-stat-l">слабых тем</div></div>
+    </div>`;
+
   if(mSorted.length){
-    html+=`<div class="card"><div class="card-hdr">⚠️ Слабые места</div>`;
+    html+=`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">⚠️ Слабые места</div>`;
     const maxE=mSorted[0]?.[1]||1;
-    mSorted.slice(0,15).forEach(([k,c])=>{
+    mSorted.slice(0,10).forEach(([k,c])=>{
       const pct=Math.round(c/maxE*100);const col=c>=5?'var(--red)':c>=3?'var(--gld)':'var(--grn)';
       html+=`<div class="weak-item"><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${k}</div>
         <div class="weak-bar"><div class="weak-bar-fill" style="width:${pct}%;background:${col}"></div></div></div>
@@ -873,40 +929,44 @@ function renderTeacherDash(sData,eResults,allStudents){
     });
     html+=`</div>`;
   }
-  if(eResults.length){
-    html+=`<div class="card"><div class="card-hdr">📝 Результаты тестов</div>`;
-    eResults.forEach(r=>{
-      const d=new Date(r.timestamp).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+
+  if(examResults.length){
+    html+=`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">📝 Результаты тестов</div>`;
+    examResults.slice(0,10).forEach(r=>{
+      const dt=new Date(r.timestamp).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
       const cls=r.pct>=80?'t-badge-ok':r.pct>=60?'t-badge-warn':'t-badge-err';
-      html+=`<div class="t-row"><div style="flex:1"><div style="font-size:14px;font-weight:600">${r.section==='listening'?'듣기':'읽기'} — ${r.score}/${r.total} (${r.pct}%)</div>
-        <div style="font-size:12px;color:var(--tx3)">${d}</div></div>
-        <span class="t-badge ${cls}">${r.pct>=80?'✓ Хорошо':r.pct>=60?'~ Средне':'✗ Повтор'}</span></div>`;
+      html+=`<div class="t-row"><div style="flex:1">
+        <div style="font-size:14px;font-weight:600">${r.section==='listening'?'🎧 듣기':'📖 읽기'} — ${r.score}/${r.total} (${r.pct}%)</div>
+        <div style="font-size:12px;color:var(--tx3)">${dt}</div>
+      </div><span class="t-badge ${cls}">${r.pct>=80?'✓ Хорошо':r.pct>=60?'~ Средне':'✗ Повтор'}</span></div>`;
     });
     html+=`</div>`;
-    html+=`<div class="card"><div class="card-hdr">✅ Правильные ответы 제102회</div>`;
+
+    html+=`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">✅ Правильные ответы 제102회</div>`;
     ['listening','reading'].forEach(sec=>{
-      html+=`<div style="font-weight:700;margin-bottom:8px;margin-top:${sec==='reading'?'14px':'0'}">${sec==='listening'?'듣기':'읽기'} (1~50)</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">`;
+      html+=`<div style="font-size:12px;color:var(--tx3);font-weight:600;margin-bottom:5px;margin-top:${sec==='reading'?'10px':'0'}">${sec==='listening'?'듣기 (1~50)':'읽기 (1~50)'}</div>`;
+      html+=`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px">`;
       for(let i=1;i<=50;i++){
-        const ans=EXAM.answers[sec][i];const chosen=eResults[0]?.answers?.[sec+'_'+i];
-        const ok=chosen===ans;const bg=chosen===undefined?'var(--sur2)':ok?'var(--grnl)':'var(--redl)';const bc=chosen===undefined?'var(--bdrl)':ok?'var(--grnm)':'var(--red)';
-        html+=`<div style="width:36px;height:34px;border-radius:6px;background:${bg};border:1px solid ${bc};display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:700">
+        const ans=EXAM.answers[sec][i];const chosen=examResults[0]?.answers?.[sec+'_'+i];
+        const ok=chosen===ans;
+        const bg=chosen===undefined?'var(--sur2)':ok?'var(--grnl)':'var(--redl)';
+        const bc=chosen===undefined?'var(--bdrl)':ok?'var(--grnm)':'var(--red)';
+        html+=`<div style="width:34px;height:32px;border-radius:5px;background:${bg};border:1px solid ${bc};display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;font-weight:700">
           <span style="color:var(--tx3)">${i}</span><span style="color:${ok?'var(--grn)':'var(--red)'}">${['①','②','③','④'][ans-1]}</span></div>`;
       }
       html+=`</div>`;
     });
     html+=`</div>`;
   }
-  html+=`<div class="card"><div class="card-hdr">📅 Пройденные дни</div><div style="display:flex;flex-wrap:wrap;gap:4px">`;
-  for(let d=1;d<=45;d++){
-    const ok=(sData.done||[]).includes(d);const rev=PLAN.review_days.includes(d);
-    html+=`<div style="width:30px;height:30px;border-radius:6px;background:${ok?'var(--grnl)':'var(--sur2)'};border:1px solid ${ok?'var(--grnm)':'var(--bdrl)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${ok?'var(--grn)':rev?'var(--pur)':'var(--tx3)'}">${d}</div>`;
+
+  html+=`<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">📅 Пройденные дни</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px">`;
+  for(let day=1;day<=45;day++){
+    const ok=(d.done||[]).includes(day);const rev=PLAN.review_days.includes(day);
+    html+=`<div title="День ${day}" style="width:30px;height:30px;border-radius:6px;background:${ok?'var(--grnl)':'var(--sur2)'};border:1px solid ${ok?'var(--grnm)':'var(--bdrl)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${ok?'var(--grn)':rev?'var(--pur)':'var(--tx3)'}">${day}</div>`;
   }
-  html+=`</div></div>`;
-  html+=`<div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn btn-sm" onclick="loadTeacherData()">🔄 Обновить</button>
-    <button class="btn btn-sm" style="background:var(--redl);color:var(--red);border-color:var(--red)" onclick="S.teacherUnlocked=false;renderTeacherPage()">🔒 Выйти</button>
-  </div>`;
-  document.getElementById('content').innerHTML=html;
+  html+=`</div></div></div>`;
+  return html;
 }
 
 // ── PHASES ──
