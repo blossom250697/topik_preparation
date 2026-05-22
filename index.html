@@ -310,15 +310,15 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 <nav class="sidebar" id="sidebar">
   <div class="logo">
     <div class="logo-main">TOPIK II <span class="logo-badge">β</span></div>
-    <div class="logo-sub">Подготовка 45 дней</div>
-    <div class="logo-exam">📅 Экзамен: 5 июля 2026</div>
+    <div class="logo-sub" id="logo-sub">Подготовка 45 дней</div>
+    <div class="logo-exam" id="logo-exam">📅 Экзамен: 5 июля 2026</div>
     <div class="logo-bar"><div class="logo-bar-fill" id="sb-prog" style="width:0%"></div></div>
   </div>
   <div class="nav" id="sb-nav"></div>
   <div class="sb-special">
-    <button class="sb-btn" id="sb-schedule-btn" onclick="openSchedule();closeSidebar()">📅 Расписание TOPIK 2026</button>
-    <button class="sb-btn" id="sb-exam-btn" onclick="openExam();closeSidebar()">📝 Тренировочный тест (102회)</button>
-    <button class="sb-btn" id="sb-teacher-btn" onclick="openTeacher();closeSidebar()">👩‍🏫 Кабинет учителя</button>
+    <button class="sb-btn" id="sb-schedule-btn" onclick="openSchedule();closeSidebar()">📅 <span id="sb-schedule-lbl">Расписание TOPIK 2026</span></button>
+    <button class="sb-btn" id="sb-exam-btn" onclick="openExam();closeSidebar()">📝 <span id="sb-exam-lbl">Тренировочный тест (102회)</span></button>
+    <button class="sb-btn" id="sb-teacher-btn" onclick="openTeacher();closeSidebar()">👩‍🏫 <span id="sb-teacher-lbl">Кабинет учителя</span></button>
   </div>
 </nav>
 
@@ -327,7 +327,7 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
   <div class="topbar">
     <div class="topbar-l">
       <div class="pg-title" id="tb-title">TOPIK II</div>
-      <div class="pg-sub" id="tb-sub">Выберите день</div>
+      <div class="pg-sub" id="tb-sub">...</div>
     </div>
     <div class="topbar-r">
       <div class="fs-bar">
@@ -482,6 +482,7 @@ let S={
   done:new Set(JSON.parse(localStorage.getItem("t45-done")||"[]")),
   mistakes:{},examAnswers:{},fontSize:15,teacherUnlocked:false,
   currentUser:null,
+  examInfo:null, // {registered:bool, date:'YYYY-MM-DD', session:'107회'}
 };
 function save(){
   localStorage.setItem("t45-done",JSON.stringify([...S.done]));
@@ -637,7 +638,7 @@ async function loadFromFirebase(){
   try{
     if(!window.RTDB) throw new Error('RTDB not ready');
     const snap=await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).get();
-    if(snap.exists()){const d=snap.val();S.done=new Set(d.done||[]);S.mistakes=d.mistakes||{};}
+    if(snap.exists()){const d=snap.val();S.done=new Set(d.done||[]);S.mistakes=d.mistakes||{};S.examInfo=d.examInfo||null;}
     setSyncStatus('ok');
   }catch(e){
     console.warn('Firebase load:',e.message); setSyncStatus('err');
@@ -687,8 +688,8 @@ function openExam(){
 function openTeacher(){
   S.page='teacher';
   document.getElementById('btn-home').style.display='inline-flex';
-  document.getElementById('tb-title').textContent='👩‍🏫 Кабинет учителя';
-  document.getElementById('tb-sub').textContent='Только для преподавателя';
+  document.getElementById('tb-title').textContent=isJosh()?'👩‍🏫 Teacher Dashboard':'👩‍🏫 Кабинет учителя';
+  document.getElementById('tb-sub').textContent=isJosh()?'For the teacher only':'Только для преподавателя';
   buildSidebar();renderTeacherPage();window.scrollTo(0,0);
 }
 
@@ -805,7 +806,7 @@ function renderTeacherPage(){
   // Иначе — сообщение
   document.getElementById('content').innerHTML=`<div class="teacher-lock">
     <div style="font-size:40px;margin-bottom:14px">🔒</div>
-    <div style="font-size:18px;font-weight:700;margin-bottom:8px">Кабинет учителя</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">${isJosh()?"Teacher Dashboard":"Кабинет учителя"}</div>
     <div style="font-size:14px;color:var(--tx2);margin-bottom:6px">Доступ только для учителя.</div>
     <div style="font-size:13px;color:var(--tx3)">Выйдите и войдите с аккаунтом учителя.</div>
     <button class="btn btn-sm" style="margin-top:18px" onclick="doLogout()">Сменить аккаунт</button>
@@ -912,7 +913,7 @@ function renderStudentDetail(d, examResults){
   let html=`<div class="card" style="border-top:3px solid var(--grn)">
     <div class="card-hdr" style="margin-bottom:14px">📊 ${d.name||'Студент'} — детали</div>
     <div class="t-stat-grid">
-      <div class="t-stat"><div class="t-stat-n">${done}</div><div class="t-stat-l">дней / 45</div></div>
+      <div class="t-stat"><div class="t-stat-n">${done}</div><div class="t-stat-l">${isJosh()?"days / 45":"дней / 45"}</div></div>
       <div class="t-stat"><div class="t-stat-n">${Math.round(done/45*100)}%</div><div class="t-stat-l">прогресс</div></div>
       <div class="t-stat"><div class="t-stat-n">${total}</div><div class="t-stat-l">ошибок</div></div>
       <div class="t-stat"><div class="t-stat-n">${mSorted.length}</div><div class="t-stat-l">слабых тем</div></div>
@@ -981,6 +982,29 @@ const PHASES=[
 function buildSidebar(){
   const done=S.done.size;
   document.getElementById("sb-prog").style.width=(done/45*100)+"%";
+  // Localise static sidebar labels
+  const _en=isJosh();
+  const _logoSub=document.getElementById('logo-sub');
+  if(_logoSub) _logoSub.textContent=_en?'45-day prep course':'Подготовка 45 дней';
+  const _logoExam=document.getElementById('logo-exam');
+  if(_logoExam){
+    if(S.examInfo&&S.examInfo.registered&&S.examInfo.date){
+      const _ed=new Date(S.examInfo.date+'T00:00:00');
+      const _ef=_ed.toLocaleDateString(_en?'en-US':'ru-RU',{day:'numeric',month:'long'});
+      _logoExam.textContent='📅 '+(_en?'Exam: ':'Экзамен: ')+_ef+' '+_ed.getFullYear();
+    } else {
+      _logoExam.textContent='📅 '+(_en?'Exam: tap to set':'Экзамен: нажмите чтобы указать');
+    }
+    _logoExam.style.cursor='pointer';
+    _logoExam.onclick=()=>openExamSetup();
+  }
+  const _sched=document.getElementById('sb-schedule-lbl');
+  if(_sched) _sched.textContent=_en?'TOPIK 2026 Schedule':'Расписание TOPIK 2026';
+  const _exam=document.getElementById('sb-exam-lbl');
+  if(_exam) _exam.textContent=_en?'Practice Test (102회)':'Тренировочный тест (102회)';
+  const _teach=document.getElementById('sb-teacher-lbl');
+  if(_teach) _teach.textContent=_en?'Teacher Dashboard':'Кабинет учителя';
+
   document.getElementById("tb-prog").textContent=done+"/45";
   const _sb2=document.getElementById('sb-schedule-btn');if(_sb2)_sb2.classList.toggle('active',S.page==='schedule');
   const _eb=document.getElementById('sb-exam-btn');if(_eb)_eb.classList.toggle('active',S.page==='exam');
@@ -1017,8 +1041,8 @@ function togglePhase(el){el.classList.toggle("open");}
 function goHome(){
   S.page="home";S.day=null;
   document.getElementById("btn-home").style.display="none";
-  document.getElementById("tb-title").textContent="TOPIK II";
-  document.getElementById("tb-sub").textContent="Выберите день";
+  document.getElementById("tb-title").textContent=isJosh()?"TOPIK II":"TOPIK II";
+  document.getElementById("tb-sub").textContent=isJosh()?"Choose a day to start":"Выберите день";
   renderHome();buildSidebar();
 }
 function openDay(day){
@@ -1053,8 +1077,9 @@ function renderHome(){
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;flex:1;min-width:130px">
         <div style="font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">${T("daysLeft")}</div>
-        <div id="dday-val" style="font-size:34px;font-weight:700;color:#fff;line-height:1">D-${dday}</div>
-        <div style="font-size:11px;opacity:.45;margin-top:4px">${T("examDate")}</div>
+        <div id="dday-val" style="font-size:34px;font-weight:700;color:#fff;line-height:1">${dday===null?'D-?':(dday>0?'D-'+dday:(dday===0?'D-Day!':'D+'+Math.abs(dday)))}</div>
+        <div style="font-size:11px;opacity:.45;margin-top:2px">${S.examInfo&&S.examInfo.registered&&S.examInfo.date?new Date(S.examInfo.date+'T00:00:00').toLocaleDateString(isJosh()?'en-US':'ru-RU',{day:'numeric',month:'long'}):(isJosh()?'tap to set exam date':'нажмите чтобы указать дату')}</div>
+        <button onclick="openExamSetup()" style="margin-top:6px;padding:3px 10px;font-size:10px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:99px;color:#fff;cursor:pointer;font-family:inherit">${isJosh()?'⚙ Set date':'⚙ Указать дату'}</button>
       </div>
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:12px 14px;flex:1;min-width:130px;display:flex;align-items:center;gap:10px">
         <svg width="80" height="80" viewBox="0 0 88 88" style="flex-shrink:0">
@@ -1067,7 +1092,7 @@ function renderHome(){
         </svg>
         <div style="min-width:0">
           <div style="font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">TOPIK II</div>
-          <div style="font-size:12px;opacity:.85;line-height:1.6">Мин. 120 / 300 баллов<br>Прогресс: <strong>${done}/45</strong> дней</div>
+          <div style="font-size:12px;opacity:.85;line-height:1.6">${isJosh()?"Min. 120 / 300 pts":"Мин. 120 / 300 баллов"}<br>${isJosh()?"Progress:":"Прогресс:"} <strong>${done}/45</strong> ${isJosh()?"days":"дней"}</div>
           <div style="font-size:11px;opacity:.5;margin-top:4px">${chanceMsg}</div>
         </div>
       </div>
@@ -1110,7 +1135,7 @@ function renderHome(){
   </div>`;
   if(!isJosh()) html+=`<div class="pc" onclick="openExam()" style="border-color:var(--blu);background:var(--blul)">
     <div class="pc-icon">📝</div>
-    <div><div class="pc-t">Тренировочный тест 제102회</div><div class="pc-m">듣기 + 읽기 · с проверкой</div></div>
+    <div><div class="pc-t">${isJosh()?"Practice Test 제102회":"Тренировочный тест 제102회"}</div><div class="pc-m">${isJosh()?"Listening + Reading · with answers":"듣기 + 읽기 · с проверкой"}</div></div>
     <div style="margin-left:auto;color:var(--blu);font-size:18px">›</div>
   </div>`;
 
@@ -1604,12 +1629,165 @@ function attachHandlers(){
 function shuffle(a){return[...a].sort(()=>Math.random()-.5);}
 
 // ── D-DAY COUNTER ──
+function getUserExamDate(){
+  // Returns Date object of user's exam, or null if not registered
+  const saved=S.examInfo;
+  if(!saved||!saved.registered||!saved.date) return null;
+  return new Date(saved.date+'T00:00:00');
+}
+
 function getDDay(){
-  const exam=new Date('2026-07-05T00:00:00');
+  const exam=getUserExamDate();
+  if(!exam) return null; // not registered
   const now=new Date();
   now.setHours(0,0,0,0);
   const diff=Math.ceil((exam-now)/(1000*60*60*24));
   return diff;
+}
+
+// ── EXAM DATE SETUP ──
+const TOPIK_SESSIONS = [
+  {session:'104회', date:'2026-01-11', label:'104회 — 11 января 2026', labelEn:'104회 — Jan 11, 2026', overseas:false},
+  {session:'105회', date:'2026-04-12', label:'105회 — 12 апреля 2026', labelEn:'105회 — Apr 12, 2026', overseas:true},
+  {session:'106회', date:'2026-05-17', label:'106회 — 17 мая 2026', labelEn:'106회 — May 17, 2026', overseas:true},
+  {session:'107회', date:'2026-07-05', label:'107회 — 5 июля 2026 ⭐', labelEn:'107회 — Jul 5, 2026 ⭐', overseas:true},
+  {session:'108회', date:'2026-10-18', label:'108회 — 18 октября 2026', labelEn:'108회 — Oct 18, 2026', overseas:true},
+  {session:'109회', date:'2026-11-15', label:'109회 — 15 ноября 2026', labelEn:'109회 — Nov 15, 2026', overseas:true},
+];
+
+function openExamSetup(){
+  const en=isJosh();
+  const cur=S.examInfo;
+  const isReg=cur&&cur.registered;
+
+  document.getElementById('content').innerHTML=`
+    <div class="hero hero-grn" style="padding:20px 24px">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">${en?'🎯 My TOPIK Exam':'🎯 Мой экзамен TOPIK'}</div>
+      <div style="font-size:13px;opacity:.75">${en?'Set your exam date for the D-Day counter':'Укажите дату — и счётчик D-Day будет вашим'}</div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">${en?'Are you registered for TOPIK?':'Вы зарегистрированы на TOPIK?'}</div>
+      <div style="display:flex;gap:10px;margin-bottom:18px">
+        <button onclick="setRegStatus(true)" id="btn-yes" class="btn btn-sm ${isReg?'btn-p':''}" style="${isReg?'':'background:var(--sur2)'}">
+          ${en?'✅ Yes, registered':'✅ Да, зарегистрирована'}
+        </button>
+        <button onclick="setRegStatus(false)" id="btn-no" class="btn btn-sm ${(!cur||!isReg)?'btn-p':''}" style="${(!cur||!isReg)?'':'background:var(--sur2)'}">
+          ${en?'⏳ Not yet':'⏳ Ещё нет'}
+        </button>
+      </div>
+
+      <div id="exam-date-section" style="${isReg?'':'display:none'}">
+        <div style="font-weight:600;font-size:14px;margin-bottom:10px">${en?'Select your session:':'Выберите сессию:'}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+          ${TOPIK_SESSIONS.map(s=>{
+            const sel=cur&&cur.session===s.session;
+            const past=new Date(s.date)<new Date();
+            return `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid ${sel?'var(--grn)':'var(--bdrl)'};border-radius:var(--r);background:${sel?'var(--grnl)':'var(--sur)'};cursor:pointer;${past?'opacity:.45':''}">
+              <input type="radio" name="topik-session" value="${s.session}" data-date="${s.date}" ${sel?'checked':''} ${past?'disabled':''} onchange="pickSession(this)" style="accent-color:var(--grn)">
+              <span style="font-size:14px">${en?s.labelEn:s.label}</span>
+              ${past?`<span style="margin-left:auto;font-size:11px;color:var(--tx3)">${en?'past':'прошёл'}</span>`:''}
+            </label>`;
+          }).join('')}
+        </div>
+        <div style="font-size:13px;color:var(--tx3);margin-bottom:12px">${en?'Or enter a custom date:':'Или введите свою дату:'}</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+          <input type="date" id="custom-date" value="${cur&&cur.date?cur.date:''}" min="2026-01-01" max="2027-12-31"
+            style="padding:9px 12px;border:1px solid var(--bdr);border-radius:var(--r);font-size:14px;background:var(--bg);color:var(--tx)"
+            onchange="pickCustomDate(this.value)">
+          <span style="font-size:13px;color:var(--tx3)">${en?'any TOPIK date':'любая дата TOPIK'}</span>
+        </div>
+      </div>
+
+      <div id="not-reg-section" style="${!isReg?'':'display:none'}">
+        <div style="background:var(--sur2);border-radius:var(--r);padding:14px;font-size:14px;line-height:1.7;margin-bottom:14px">
+          ${en?`<strong>No problem!</strong> You can still use the course.<br>
+            The D-Day counter will show <strong>D-?</strong> until you register.<br>
+            When you register, come back here and set your date.`
+          :`<strong>Всё равно занимайтесь!</strong> Курс работает без регистрации.<br>
+            Счётчик покажет <strong>D-?</strong> пока не зарегистрируетесь.<br>
+            Когда зарегистрируетесь — вернитесь сюда и укажите дату.`}
+        </div>
+        <a href="https://www.topik.go.kr" target="_blank" class="btn btn-sm" style="text-decoration:none">
+          🌐 ${en?'Register at topik.go.kr':'Зарегистрироваться на topik.go.kr'}
+        </a>
+      </div>
+
+      <div id="exam-save-msg" style="display:none;padding:10px;background:var(--grnl);border-radius:var(--r);color:var(--grn);font-size:13px;margin-bottom:12px">
+        ✅ ${en?'Saved!':'Сохранено!'}
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="goHome()" style="margin-top:4px">← ${en?'Back':'Назад'}</button>
+    </div>`;
+  document.getElementById('btn-home').style.display='inline-flex';
+  document.getElementById('tb-title').textContent=en?'🎯 My Exam':'🎯 Мой экзамен';
+  document.getElementById('tb-sub').textContent=en?'Set your exam date':'Укажите дату экзамена';
+}
+
+function setRegStatus(yes){
+  if(!S.examInfo) S.examInfo={registered:false,date:null,session:null};
+  S.examInfo.registered=yes;
+  document.getElementById('exam-date-section').style.display=yes?'':'none';
+  document.getElementById('not-reg-section').style.display=yes?'none':'';
+  document.getElementById('btn-yes').className='btn btn-sm'+(yes?' btn-p':'');
+  document.getElementById('btn-no').className='btn btn-sm'+(!yes?' btn-p':'');
+  saveExamInfoDebounced();
+}
+
+function pickSession(radio){
+  if(!S.examInfo) S.examInfo={registered:true,date:null,session:null};
+  S.examInfo.session=radio.value;
+  S.examInfo.date=radio.dataset.date;
+  document.getElementById('custom-date').value=radio.dataset.date;
+  // Re-render radio styles
+  document.querySelectorAll('input[name="topik-session"]').forEach(r=>{
+    const lbl=r.closest('label');
+    lbl.style.borderColor=r.checked?'var(--grn)':'var(--bdrl)';
+    lbl.style.background=r.checked?'var(--grnl)':'var(--sur)';
+  });
+  saveExamInfoDebounced();
+}
+
+function pickCustomDate(val){
+  if(!S.examInfo) S.examInfo={registered:true,date:null,session:null};
+  S.examInfo.date=val;
+  S.examInfo.session='custom';
+  // Uncheck radio buttons
+  document.querySelectorAll('input[name="topik-session"]').forEach(r=>{
+    r.checked=false;
+    const lbl=r.closest('label');
+    lbl.style.borderColor='var(--bdrl)';
+    lbl.style.background='var(--sur)';
+  });
+  saveExamInfoDebounced();
+}
+
+let _examSaveTimer=null;
+function saveExamInfoDebounced(){
+  if(_examSaveTimer) clearTimeout(_examSaveTimer);
+  _examSaveTimer=setTimeout(async()=>{
+    const msg=document.getElementById('exam-save-msg');
+    try{
+      await saveToFirebase();
+      if(msg){msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);}
+      // Update D-day counter on home if visible
+      const ddEl=document.getElementById('dday-val');
+      if(ddEl){
+        const dd=getDDay();
+        ddEl.textContent=dd>0?'D-'+dd:(dd===0?'D-Day!':'D+'+Math.abs(dd));
+      }
+      // Update logo-exam
+      const leEl=document.getElementById('logo-exam');
+      if(leEl){
+        const en=isJosh();
+        if(S.examInfo&&S.examInfo.registered&&S.examInfo.date){
+          const d=new Date(S.examInfo.date+'T00:00:00');
+          const fmt=d.toLocaleDateString(en?'en-US':'ru-RU',{day:'numeric',month:'long',year:'numeric'});
+          leEl.textContent='📅 '+(en?'Exam: ':'Экзамен: ')+fmt;
+        } else {
+          leEl.textContent='📅 '+(en?'Exam: not set yet':'Экзамен: не указан');
+        }
+      }
+    }catch(e){console.warn(e);}
+  },800);
 }
 
 // ── PASS CHANCE ──
@@ -1650,7 +1828,7 @@ function renderLoginPage(){
       <div class="hero hero-grn" style="text-align:center;margin-bottom:20px;padding:28px">
         <div style="font-size:40px;margin-bottom:8px">🇰🇷</div>
         <div style="font-size:22px;font-weight:700;margin-bottom:4px">TOPIK II</div>
-        <div style="font-size:13px;opacity:.75">Подготовка к экзамену · 5 июля 2026</div>
+        <div style="font-size:13px;opacity:.75">${isJosh()?"Exam prep · July 5, 2026":"Подготовка к экзамену · 5 июля 2026"}</div>
       </div>
       <div class="card">
         <div class="card-hdr">Вход в систему</div>
@@ -1711,6 +1889,9 @@ function doLogout(){
   S.currentUser=null;
   S.teacherUnlocked=false;
   renderLoginPage();
+  // Update static labels even on login screen
+  const _en0=false; // not logged in yet, default Russian
+
 }
 
 function boot(){
@@ -1727,7 +1908,11 @@ function boot(){
       if(user){
         S.currentUser=user;
         loadFromFirebase().then(()=>{
-        buildSidebar();renderHome();
+        buildSidebar();
+        renderHome();
+        // Update title bar language
+        document.getElementById('tb-title').textContent='TOPIK II';
+        document.getElementById('tb-sub').textContent=isJosh()?'Choose a day to start':'Выберите день';
         const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
       });
       } else {
@@ -1742,7 +1927,7 @@ function boot(){
   // Update D-day every minute
   setInterval(()=>{
     const el=document.getElementById('dday-val');
-    if(el) el.textContent='D-'+getDDay();
+    if(el){const _dd=getDDay();el.textContent=_dd===null?'D-?':(_dd>0?'D-'+_dd:(_dd===0?'D-Day!':'D+'+Math.abs(_dd)));}
   },60000);
 }
 
