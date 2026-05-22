@@ -371,7 +371,7 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 </script>
 <script>
 // ── LOCALISATION ──
-const JOSH_EMAILS = ["josh@email.com"]; // <- Josh's real email here
+const JOSH_EMAILS = ["josh@topik-prep.com"]; // <- Josh's real email here
 function isJosh(){ return S.currentUser && JOSH_EMAILS.includes(S.currentUser.email); }
 function getLang(){ return isJosh() ? 'en' : 'ru'; }
 function getGDB(){ return isJosh() ? GDB_EN : GDB; }
@@ -1574,7 +1574,7 @@ function getChanceColor(pct){
 // ── INIT ──
 // ── AUTH ──
 // Укажите email учителя — именно с него открывается кабинет
-const TEACHER_EMAIL = "teacher@topik.ru"; // ← замените на свой!
+const TEACHER_EMAIL = "vkropot@gmail.com"; // ← замените на свой!
 
 function isTeacher(){
   return S.currentUser && S.currentUser.email === TEACHER_EMAIL;
