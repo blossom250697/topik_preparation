@@ -1867,25 +1867,27 @@ function boot(){
             return;
           }
           // ── CROSS-DEVICE MERGE ──
-          // Find all records with the same student name and merge their done days
+          // Find all records for this student (by canonical UID or known name variants)
           const allSnap = await window.RTDB.ref('students').get();
-          let mergedDone = new Set(S.done); // start with local cache
+          let mergedDone = new Set(S.done);
           let mergedMistakes = {...(S.mistakes||{})};
           let mergedExamInfo = S.examInfo || null;
           
           if(allSnap.exists()){
             const allData = allSnap.val();
-            const myName = getStudentName();
-            // Merge data from ALL records that share the same name (= same student, different devices)
+            const myUID = getStudentUID();
+            const myEmailPrefix = (user.email||'').split('@')[0].toLowerCase();
             Object.entries(allData).forEach(([uid, d])=>{
-              if(d.name === myName || uid === user.uid){
-                // Merge done days
+              const dName = (d.name||'').toLowerCase();
+              // Match: same canonical UID, or same session UID, or name matches email prefix or legacy "Катя"/"катя"
+              const isMe = uid === myUID || uid === user.uid ||
+                           dName === myEmailPrefix ||
+                           (isKatya() && (dName === 'катя' || dName === 'katya'));
+              if(isMe){
                 (d.done||[]).forEach(day => mergedDone.add(day));
-                // Merge mistakes (take max)
                 Object.entries(d.mistakes||{}).forEach(([k,v])=>{
                   mergedMistakes[k] = Math.max(mergedMistakes[k]||0, v);
                 });
-                // Take examInfo if we don't have it
                 if(!mergedExamInfo && d.examInfo) mergedExamInfo = d.examInfo;
               }
             });
