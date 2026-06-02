@@ -844,10 +844,19 @@ async function loadTeacherData(){
     // Exclude teacher
     const teacherUid=S.currentUser?.uid;
     const allRaw={...allStudents};
-    // Exclude teacher record
+    // Exclude teacher's own record(s)
     if(teacherUid && allStudents[teacherUid]) delete allStudents[teacherUid];
-    // Also exclude any record without done data that's not a real student
-    Object.keys(allStudents).forEach(uid=>{ if(!allStudents[uid].name) delete allStudents[uid]; });
+    // Build clean student list: keep only known canonical student UIDs
+    // plus any UID that has actual progress (done days > 0)
+    const KNOWN_STUDENT_UIDS = [KATYA_CANONICAL_UID]; // add more as students join
+    Object.keys(allStudents).forEach(uid=>{
+      const d = allStudents[uid];
+      if(!d.name) { delete allStudents[uid]; return; }
+      // If uid is not a known student UID AND has no done days — it's likely a stale teacher record
+      const hasDone = (d.done||[]).length > 0;
+      const isKnown = KNOWN_STUDENT_UIDS.includes(uid);
+      if(!hasDone && !isKnown) delete allStudents[uid];
+    });
 
     const eS=await window.RTDB.ref('exam_results').orderByChild('timestamp').limitToLast(50).get();
     if(eS.exists()) eS.forEach(c=>eResults.unshift({id:c.key,...c.val()}));
@@ -1804,7 +1813,12 @@ function boot(){
         try{
           const snap = await window.RTDB.ref('students/'+getStudentUID()).get();
           
-          if(isTeacher()){ buildSidebar(); renderHome(); return; }
+          if(isTeacher()){
+            buildSidebar();
+            openTeacher();
+            const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+            return;
+          }
           // ── CROSS-DEVICE MERGE ──
           // Find all records with the same student name and merge their done days
           const allSnap = await window.RTDB.ref('students').get();
