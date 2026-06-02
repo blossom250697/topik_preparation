@@ -494,6 +494,7 @@ let S={
   composed:[],selOpt:null,vFlipped:new Set(),
   done:new Set(JSON.parse(localStorage.getItem("t45-done")||"[]")),
   mistakes:{},examAnswers:{},fontSize:15,teacherUnlocked:false,
+  dayLog:{}, // {day: {date, score, total}}
   currentUser:null,
 };
 function save(){
@@ -651,7 +652,7 @@ async function loadFromFirebase(){
   try{
     if(!window.RTDB) throw new Error('RTDB not ready');
     const snap=await window.RTDB.ref('students/'+getStudentUID()).get();
-    if(snap.exists()){const d=snap.val();S.done=new Set(d.done||[]);S.mistakes=d.mistakes||{};}
+    if(snap.exists()){const d=snap.val();S.done=new Set(d.done||[]);S.mistakes=d.mistakes||{};S.dayLog=d.dayLog||{};}
     setSyncStatus('ok');
   }catch(e){
     console.warn('Firebase load:',e.message); setSyncStatus('err');
@@ -662,7 +663,7 @@ async function loadFromFirebase(){
 async function saveToFirebase(){
   if(isTeacher()){ setSyncStatus("ok"); return; }
   // Always save to localStorage first (instant, never fails)
-  const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null};
+  const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}};
   localStorage.setItem('t45-done', JSON.stringify([...S.done]));
   localStorage.setItem('t45-mistakes', JSON.stringify(S.mistakes));
   localStorage.setItem('t45-data', JSON.stringify(data));
@@ -673,7 +674,7 @@ async function saveToFirebase(){
       if(!window.RTDB) throw new Error('no RTDB');
       await window.RTDB.ref('students/'+getStudentUID()).update({
         done:[...S.done], mistakes:S.mistakes, lastSeen:Date.now(),
-        name:getStudentName(), examInfo:S.examInfo||null
+        name:getStudentName(), examInfo:S.examInfo||null, dayLog:S.dayLog||{}
       });
       setSyncStatus('ok');
       return;
@@ -976,9 +977,44 @@ function renderTeacherDash(allStudents, eResults, allRaw, teacherUid){
       for(let day=1;day<=45;day++){
         const ok=(d.done||[]).includes(day);
         const rev=PLAN.review_days.includes(day);
-        html+=`<div style="width:28px;height:28px;border-radius:5px;background:${ok?'var(--grnl)':'var(--sur2)'};border:1px solid ${ok?'var(--grnm)':'var(--bdrl)'};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${ok?'var(--grn)':rev?'var(--pur)':'var(--tx3)'}">${day}</div>`;
+        const log=(d.dayLog||{})[day];
+        const title=log?`День ${day} — ${log.date}${log.pct!=null?' · '+log.pct+'%':''}`:('День '+day);
+        html+=`<div title="${title}" style="width:28px;height:28px;border-radius:5px;background:${ok?'var(--grnl)':'var(--sur2)'};border:1px solid ${ok?'var(--grnm)':'var(--bdrl)'};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${ok?'var(--grn)':rev?'var(--pur)':'var(--tx3)'}">${day}</div>`;
       }
       html+=`</div></div>`;
+
+      // ── Progress table ──
+      const dayLog = d.dayLog||{};
+      const logEntries = Object.entries(dayLog).sort((a,b)=>Number(a[0])-Number(b[0]));
+      if(logEntries.length){
+        html+=`<div style="margin-top:14px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px">📊 Таблица прохождения</div>
+          <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:var(--sur2)">
+              <th style="padding:7px 10px;text-align:left;border-bottom:2px solid var(--bdr)">День</th>
+              <th style="padding:7px 10px;text-align:left;border-bottom:2px solid var(--bdr)">Дата</th>
+              <th style="padding:7px 10px;text-align:center;border-bottom:2px solid var(--bdr)">Результат</th>
+              <th style="padding:7px 10px;text-align:center;border-bottom:2px solid var(--bdr)">%</th>
+            </tr></thead>
+            <tbody>
+            ${logEntries.map(([day, log])=>{
+              const isRev = PLAN.review_days.includes(Number(day));
+              const pctColor = log.pct>=80?'var(--grn)':log.pct>=60?'var(--gld)':log.pct!=null?'var(--red)':'var(--tx3)';
+              const scoreStr = (log.score!=null&&log.total) ? `${log.score}/${log.total}` : '—';
+              const pctStr = log.pct!=null ? log.pct+'%' : '—';
+              return `<tr style="border-bottom:1px solid var(--bdrl)">
+                <td style="padding:6px 10px;font-weight:600">${isRev?'🔄 ':''} День ${day}</td>
+                <td style="padding:6px 10px;color:var(--tx3)">${log.date||'—'}</td>
+                <td style="padding:6px 10px;text-align:center">${scoreStr}</td>
+                <td style="padding:6px 10px;text-align:center;font-weight:700;color:${pctColor}">${pctStr}</td>
+              </tr>`;
+            }).join('')}
+            </tbody>
+          </table>
+          </div>
+        </div>`;
+      }
 
       const studentExams=eResults.filter(r=>r.uid===uid||(r.name&&r.name===d.name));
       if(studentExams.length){
@@ -1498,7 +1534,7 @@ function nextEx(){
   S.exIdx++;S.composed=[];S.selOpt=null;
   if(S.exIdx>=S.exList.length){
     S.exPhase="done";
-    markDone(S.day);
+    markDone(S.day, S.exScore, S.exList.length);
     sendResult(S.day, S.exScore, S.exList.length);
   }
   renderDay();attachHandlers();window.scrollTo(0,0);
@@ -1618,7 +1654,7 @@ function renderRevDay(day){
   }
 
   // "Day complete" button always at the bottom
-  html+=`<button class="btn btn-p btn-full" style="margin-top:16px" onclick="markDone(${day});goHome()">${T("dayDone")}</button>`;
+  html+=`<button class="btn btn-p btn-full" style="margin-top:16px" onclick="markDone(${day},null,null);goHome()">${T("dayDone")}</button>`;
 
   document.getElementById("content").innerHTML=html;
   attachHandlers();
@@ -1653,8 +1689,15 @@ function showGModal(form){
 }
 
 // ── HELPERS ──
-function markDone(day){
+function markDone(day, score, total){
   S.done.add(day);
+  // Record date and score for this day
+  S.dayLog[day] = {
+    date: new Date().toISOString().slice(0,10),
+    score: score||null,
+    total: total||null,
+    pct: (score!=null&&total)?Math.round(score/total*100):null
+  };
   buildSidebar();
   // Save immediately (not queued) and show toast
   saveToFirebase().then(()=>{
@@ -1874,6 +1917,7 @@ function boot(){
       S.done = new Set(d.done||[]);
       S.mistakes = d.mistakes||{};
       S.examInfo = d.examInfo||null;
+      S.dayLog = d.dayLog||{};
       buildSidebar();
       renderHome();
       const lb=document.getElementById('btn-logout');if(lb){lb.style.display='flex';lb.style.visibility='visible';};
