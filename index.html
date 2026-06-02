@@ -67,7 +67,7 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 /* ── TOPBAR ── */
 .topbar{background:var(--sur);border-bottom:1px solid var(--bdrl);padding:12px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:50}
 .topbar-l{flex:1;min-width:0}
-.pg-title{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pg-title{font-size:calc(var(--fs) + 1px);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pg-sub{font-size:12px;color:var(--tx3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topbar-r{display:flex;gap:6px;align-items:center;flex-shrink:0}
 
@@ -80,7 +80,7 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 .btn:active{transform:scale(.97)}
 .btn-p{background:var(--grn);color:#fff;border-color:var(--grn)}
 .btn-p:hover{background:#234a31}
-.btn-sm{padding:7px 14px;font-size:13px}
+.btn-sm{padding:7px 14px;font-size:calc(var(--fs) - 2px)}
 .btn-ghost{background:transparent;border:none;color:var(--tx2);padding:6px 10px}
 .btn-ghost:hover{background:var(--sur2)}
 .btn-full{width:100%}
@@ -99,11 +99,11 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 .hero-grn{background:linear-gradient(135deg,var(--grn),#1a3d2a)}
 .hero-pur{background:linear-gradient(135deg,var(--pur),#2d1f5e)}
 .hero::before{content:"";position:absolute;right:-16px;top:-16px;width:80px;height:80px;background:rgba(255,255,255,.05);border-radius:50%}
-.hero-title{font-size:18px;font-weight:700;margin-bottom:3px}
-.hero-sub{font-size:13px;opacity:.75}
+.hero-title{font-size:calc(var(--fs) + 3px);font-weight:700;margin-bottom:3px}
+.hero-sub{font-size:calc(var(--fs) - 2px);opacity:.75}
 
 /* ── GRAMMAR ── */
-.g-form{font-size:22px;font-weight:700;margin-bottom:2px}
+.g-form{font-size:calc(var(--fs) + 7px);font-weight:700;margin-bottom:2px}
 .g-tr{font-size:13px;opacity:.75;font-style:italic}
 .feel-box{background:var(--gldl);border:1px solid #D4B56A;border-radius:var(--r);padding:10px 12px;margin-bottom:10px}
 .feel-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gld);margin-bottom:3px}
@@ -177,12 +177,12 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 .res-circle{width:96px;height:96px;border-radius:50%;border:3px solid var(--grn);display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0 auto 14px}
 .res-n{font-size:28px;font-weight:700;color:var(--grn);line-height:1}
 .res-d{font-size:12px;color:var(--tx3)}
-.res-msg{font-size:17px;font-weight:700;margin-bottom:5px}
+.res-msg{font-size:calc(var(--fs) + 2px);font-weight:700;margin-bottom:5px}
 .res-sub{font-size:14px;color:var(--tx2);margin-bottom:20px}
 
 /* ── HOME ── */
 .home-hero{background:linear-gradient(135deg,#1C1A16,var(--grn));border-radius:var(--rl);padding:22px;color:#fff;margin-bottom:14px}
-.hh-t{font-size:22px;font-weight:700;margin-bottom:4px}
+.hh-t{font-size:calc(var(--fs) + 7px);font-weight:700;margin-bottom:4px}
 .hh-s{font-size:13px;opacity:.7;margin-bottom:16px}
 .stats{display:flex;gap:10px;flex-wrap:wrap}
 .stat{background:rgba(255,255,255,.08);border-radius:var(--r);padding:10px 14px;min-width:70px}
@@ -190,8 +190,8 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 .stat-l{font-size:11px;opacity:.55;margin-top:1px}
 .pc{background:var(--sur);border:1px solid var(--bdrl);border-radius:var(--rl);padding:14px 16px;margin-bottom:8px;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:12px;box-shadow:var(--sh);touch-action:manipulation}
 .pc:active{transform:scale(.98)}
-.pc-icon{font-size:24px;flex-shrink:0}
-.pc-t{font-size:14px;font-weight:700}
+.pc-icon{font-size:calc(var(--fs) + 9px);flex-shrink:0}
+.pc-t{font-size:var(--fs);font-weight:700}
 .pc-m{font-size:12px;color:var(--tx3);margin-top:2px}
 
 /* ── REVIEW GRID ── */
@@ -354,10 +354,19 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 </script>
 <script>
 // ── LOCALISATION ──
-const JOSH_EMAILS = ["josh@topik-prep.com"]; // <- Josh's real email here
+const JOSH_EMAILS = ["josh@topik-prep.com"];
+const KATYA_EMAIL = "katya@topik-prep.com";
+const KATYA_CANONICAL_UID = "EDhtvniSLvcAtgGhYklmjOB6Ie92"; // Катя's main UID
 function isJosh(){ return S.currentUser && JOSH_EMAILS.includes(S.currentUser.email); }
+function isKatya(){ return S.currentUser && S.currentUser.email === KATYA_EMAIL; }
 function getLang(){ return isJosh() ? 'en' : 'ru'; }
 function getGDB(){ return isJosh() ? GDB_EN : GDB; }
+// Returns the Firebase path for this student's data
+function getStudentUID(){
+  // Katya always uses her canonical UID regardless of which device/session
+  if(isKatya()) return KATYA_CANONICAL_UID;
+  return S.currentUser?.uid || 'unknown';
+}
 function getStudentName(){ return isJosh() ? 'Josh' : 'Катя'; }
 
 const UI = {
@@ -619,7 +628,7 @@ async function loadFromFirebase(){
   setSyncStatus('syncing');
   try{
     if(!window.RTDB) throw new Error('RTDB not ready');
-    const snap=await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).get();
+    const snap=await window.RTDB.ref('students/'+getStudentUID()).get();
     if(snap.exists()){const d=snap.val();S.done=new Set(d.done||[]);S.mistakes=d.mistakes||{};}
     setSyncStatus('ok');
   }catch(e){
@@ -639,7 +648,7 @@ async function saveToFirebase(){
   for(let attempt=0; attempt<3; attempt++){
     try{
       if(!window.RTDB) throw new Error('no RTDB');
-      await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).update({
+      await window.RTDB.ref('students/'+getStudentUID()).update({
         done:[...S.done], mistakes:S.mistakes, lastSeen:Date.now(),
         name:getStudentName(), examInfo:S.examInfo||null
       });
@@ -812,39 +821,77 @@ function checkPin(){} // не используется
 async function loadTeacherData(){
   document.getElementById('content').innerHTML=`<div style='text-align:center;padding:32px;color:var(--tx3)'>⏳ Загрузка данных учеников...</div>`;
   try{
+    if(!window.RTDB) throw new Error('Firebase не подключён. Подождите несколько секунд и нажмите Обновить.');
     let allStudents={};
     let eResults=[];
-    if(window.RTDB){
-      // Read ALL students (entire students/ branch)
-      const sS=await window.RTDB.ref('students').get();
-      if(sS.exists()) allStudents=sS.val();
-      // Exclude teacher's own record
-      const teacherUid=S.currentUser?.uid;
-      if(teacherUid && allStudents[teacherUid]){
-        delete allStudents[teacherUid];
-      }
-      // Exam results
-      const eS=await window.RTDB.ref('exam_results').orderByChild('timestamp').limitToLast(50).get();
-      if(eS.exists()) eS.forEach(c=>eResults.unshift({id:c.key,...c.val()}));
+
+    // Read ALL students
+    const sS=await window.RTDB.ref('students').get();
+    if(sS.exists()){
+      allStudents=sS.val();
+      // Show debug: what UIDs are in Firebase
+      console.log('Firebase students raw:', JSON.stringify(allStudents, null, 2));
+    } else {
+      console.log('Firebase students: EMPTY - no data at students/');
     }
-    renderTeacherDash(allStudents,eResults);
+
+    // Exclude teacher
+    const teacherUid=S.currentUser?.uid;
+    const allRaw={...allStudents};
+    // Exclude teacher record
+    if(teacherUid && allStudents[teacherUid]) delete allStudents[teacherUid];
+    // Also exclude any record without done data that's not a real student
+    Object.keys(allStudents).forEach(uid=>{ if(!allStudents[uid].name) delete allStudents[uid]; });
+
+    const eS=await window.RTDB.ref('exam_results').orderByChild('timestamp').limitToLast(50).get();
+    if(eS.exists()) eS.forEach(c=>eResults.unshift({id:c.key,...c.val()}));
+
+    renderTeacherDash(allStudents, eResults, allRaw, teacherUid);
   }catch(e){
-    document.getElementById('content').innerHTML=`<div style="text-align:center;padding:32px;color:var(--red)">Ошибка: ${e.message}<br><button class="btn btn-sm" style="margin-top:12px" onclick="loadTeacherData()">Повторить</button></div>`;
+    document.getElementById('content').innerHTML=`<div style="text-align:center;padding:32px">
+      <div style="color:var(--red);margin-bottom:12px">Ошибка: ${e.message}</div>
+      <button class="btn btn-sm" onclick="loadTeacherData()">🔄 Повторить</button>
+      <div style="margin-top:16px;font-size:12px;color:var(--tx3);text-align:left;background:var(--sur2);padding:12px;border-radius:var(--r)">
+        <b>Диагностика:</b><br>
+        Firebase ready: ${window.RTDB?'✅':'❌'}<br>
+        Auth user: ${S.currentUser?.email||'не авторизован'}<br>
+        UID: ${S.currentUser?.uid||'—'}
+      </div>
+    </div>`;
   }
 }
-function renderTeacherDash(allStudents, eResults){
+function renderTeacherDash(allStudents, eResults, allRaw, teacherUid){
   const entries=Object.entries(allStudents||{});
+  const rawEntries=Object.entries(allRaw||{});
 
   let html=`<div class="hero hero-grn">
     <div class="hero-title">👩‍🏫 Кабинет учителя</div>
-    <div class="hero-sub">${entries.length} ${entries.length===1?'ученик':'ученика/ов'} · Firebase</div>
+    <div class="hero-sub">${entries.length} ученика/ов · Firebase</div>
+  </div>`;
+
+  // ── DEBUG BLOCK ──
+  html+=`<div class="card" style="border-left:3px solid var(--gld);margin-bottom:14px">
+    <div class="card-hdr">🔍 Диагностика Firebase</div>
+    <div style="font-size:12px;line-height:1.8;font-family:monospace">
+      <div>Ваш UID (учитель): <b>${teacherUid||'—'}</b></div>
+      <div>Email: <b>${S.currentUser?.email||'—'}</b></div>
+      <div>Всего записей в students/: <b>${rawEntries.length}</b></div>
+      ${rawEntries.map(([uid,d])=>`
+        <div style="margin-top:6px;padding:6px;background:var(--sur2);border-radius:4px">
+          <div>UID: <b>${uid}</b> ${uid===teacherUid?'← это вы':''}</div>
+          <div>name: <b>${d.name||'—'}</b></div>
+          <div>done: <b>${(d.done||[]).length} дней</b> [${(d.done||[]).join(', ')}]</div>
+          <div>lastSeen: <b>${d.lastSeen?new Date(d.lastSeen).toLocaleString('ru-RU'):'—'}</b></div>
+        </div>`).join('')}
+      ${rawEntries.length===0?'<div style="color:var(--red)">⚠️ students/ пустой — данные не сохраняются в Firebase!</div>':''}
+    </div>
   </div>`;
 
   if(entries.length===0){
     html+=`<div class="card" style="text-align:center;padding:32px;color:var(--tx3)">
       <div style="font-size:32px;margin-bottom:10px">👤</div>
-      <div style="font-weight:600;margin-bottom:6px">Учеников пока нет</div>
-      <div style="font-size:13px">Как только ученик войдёт и начнёт заниматься — появится здесь</div>
+      <div style="font-weight:600;margin-bottom:6px">Учеников не найдено</div>
+      <div style="font-size:13px">Проверьте диагностику выше</div>
     </div>`;
   } else {
     entries.forEach(([uid, d])=>{
@@ -853,7 +900,7 @@ function renderTeacherDash(allStudents, eResults){
       const mis=d.mistakes||{};
       const errTotal=Object.values(mis).reduce((a,b)=>a+b,0);
       const mSorted=Object.entries(mis).sort((a,b)=>b[1]-a[1]);
-      const lastSeen=d.lastSeen?new Date(d.lastSeen).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+      const lastSeen=d.lastSeen?new Date(d.lastSeen).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
       const flag=d.name==='Катя'?'🇷🇺':(d.name==='Josh'||d.name==='Джош')?'🇨🇦':'👤';
 
       html+=`<div class="card" style="margin-bottom:14px">
@@ -892,7 +939,7 @@ function renderTeacherDash(allStudents, eResults){
         html+=`</div>`;
       }
 
-      html+=`<div style="margin-bottom:12px"><div style="font-weight:600;font-size:13px;margin-bottom:8px">📅 Пройденные дни</div>
+      html+=`<div style="margin-bottom:4px"><div style="font-weight:600;font-size:13px;margin-bottom:8px">📅 Пройденные дни</div>
         <div style="display:flex;flex-wrap:wrap;gap:3px">`;
       for(let day=1;day<=45;day++){
         const ok=(d.done||[]).includes(day);
@@ -903,7 +950,7 @@ function renderTeacherDash(allStudents, eResults){
 
       const studentExams=eResults.filter(r=>r.uid===uid||(r.name&&r.name===d.name));
       if(studentExams.length){
-        html+=`<div><div style="font-weight:600;font-size:13px;margin-bottom:8px">📝 Результаты тестов</div>`;
+        html+=`<div style="margin-top:10px"><div style="font-weight:600;font-size:13px;margin-bottom:8px">📝 Результаты тестов</div>`;
         studentExams.slice(0,5).forEach(r=>{
           const dt=new Date(r.timestamp).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
           const cls=r.pct>=80?'t-badge-ok':r.pct>=60?'t-badge-warn':'t-badge-err';
@@ -914,7 +961,6 @@ function renderTeacherDash(allStudents, eResults){
         });
         html+=`</div>`;
       }
-
       html+=`</div>`;
     });
 
@@ -1030,7 +1076,7 @@ function renderHome(){
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;flex:1;min-width:130px">
         <div style="font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">${T("daysLeft")}</div>
-        <div id="dday-val" style="font-size:34px;font-weight:700;color:#fff;line-height:1">D-${dday}</div>
+        <div id="dday-val" style="font-size:calc(var(--fs) + 19px);font-weight:700;color:#fff;line-height:1">D-${dday}</div>
         <div style="font-size:11px;opacity:.45;margin-top:4px">${T("examDate")}</div>
       </div>
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:12px 14px;flex:1;min-width:130px;display:flex;align-items:center;gap:10px">
@@ -1745,29 +1791,42 @@ function boot(){
 
         // Update lastSeen immediately — don't wait for full save
         if(window.RTDB){
-          window.RTDB.ref('students/'+user.uid).update({lastSeen:Date.now(), name:getStudentName()}).catch(()=>{});
+          window.RTDB.ref('students/'+getStudentUID()).update({lastSeen:Date.now(), name:getStudentName()}).catch(()=>{});
         }
 
         // Load from Firebase
         try{
-          const snap = await window.RTDB.ref('students/'+user.uid).get();
-          if(snap.exists()){
-            const fbData = snap.val();
-            const fbDone = new Set(fbData.done||[]);
-            const fbMistakes = fbData.mistakes||{};
-
-            // MERGE: keep the larger set (local cache wins if ahead of Firebase)
-            const localDone = S.done; // already loaded from cache
-            const mergedDone = new Set([...fbDone, ...localDone]);
-            const mergedMistakes = {...fbMistakes};
-            Object.entries(S.mistakes||{}).forEach(([k,v])=>{
-              mergedMistakes[k] = Math.max(mergedMistakes[k]||0, v);
+          const snap = await window.RTDB.ref('students/'+getStudentUID()).get();
+          
+          // ── CROSS-DEVICE MERGE ──
+          // Find all records with the same student name and merge their done days
+          const allSnap = await window.RTDB.ref('students').get();
+          let mergedDone = new Set(S.done); // start with local cache
+          let mergedMistakes = {...(S.mistakes||{})};
+          let mergedExamInfo = S.examInfo || null;
+          
+          if(allSnap.exists()){
+            const allData = allSnap.val();
+            const myName = getStudentName();
+            // Merge data from ALL records that share the same name (= same student, different devices)
+            Object.entries(allData).forEach(([uid, d])=>{
+              if(d.name === myName || uid === user.uid){
+                // Merge done days
+                (d.done||[]).forEach(day => mergedDone.add(day));
+                // Merge mistakes (take max)
+                Object.entries(d.mistakes||{}).forEach(([k,v])=>{
+                  mergedMistakes[k] = Math.max(mergedMistakes[k]||0, v);
+                });
+                // Take examInfo if we don't have it
+                if(!mergedExamInfo && d.examInfo) mergedExamInfo = d.examInfo;
+              }
             });
-
-            S.done = mergedDone;
-            S.mistakes = mergedMistakes;
-            S.examInfo = fbData.examInfo || S.examInfo || null;
           }
+          
+          S.done = mergedDone;
+          S.mistakes = mergedMistakes;
+          S.examInfo = mergedExamInfo;
+          
         }catch(e){ console.warn('Firebase load:', e.message); }
 
         // Save merged state back to Firebase and cache
