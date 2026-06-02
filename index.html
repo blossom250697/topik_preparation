@@ -1743,6 +1743,11 @@ function boot(){
         S.currentUser = user;
         localStorage.setItem('t45-user', JSON.stringify({uid:user.uid, email:user.email}));
 
+        // Update lastSeen immediately — don't wait for full save
+        if(window.RTDB){
+          window.RTDB.ref('students/'+user.uid).update({lastSeen:Date.now(), name:getStudentName()}).catch(()=>{});
+        }
+
         // Load from Firebase
         try{
           const snap = await window.RTDB.ref('students/'+user.uid).get();
