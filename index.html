@@ -629,18 +629,28 @@ async function loadFromFirebase(){
   }
 }
 async function saveToFirebase(){
-  localStorage.setItem('t45-done',JSON.stringify([...S.done]));
-  localStorage.setItem('t45-mistakes',JSON.stringify(S.mistakes));
-  // Update full cache so next launch is instant
-  localStorage.setItem('t45-data', JSON.stringify({
-    done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null
-  }));
+  // Always save to localStorage first (instant, never fails)
+  const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null};
+  localStorage.setItem('t45-done', JSON.stringify([...S.done]));
+  localStorage.setItem('t45-mistakes', JSON.stringify(S.mistakes));
+  localStorage.setItem('t45-data', JSON.stringify(data));
   setSyncStatus('syncing');
-  try{
-    if(!window.RTDB) throw new Error('no RTDB');
-    await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).update({done:[...S.done],mistakes:S.mistakes,lastSeen:Date.now(),name:getStudentName(),examInfo:S.examInfo||null});
-    setSyncStatus('ok');
-  }catch(e){ console.warn('Firebase save:',e.message); setSyncStatus('err'); }
+  // Retry up to 3 times if Firebase not ready
+  for(let attempt=0; attempt<3; attempt++){
+    try{
+      if(!window.RTDB) throw new Error('no RTDB');
+      await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).update({
+        done:[...S.done], mistakes:S.mistakes, lastSeen:Date.now(),
+        name:getStudentName(), examInfo:S.examInfo||null
+      });
+      setSyncStatus('ok');
+      return;
+    }catch(e){
+      console.warn('Firebase save attempt '+(attempt+1)+':', e.message);
+      if(attempt<2) await new Promise(r=>setTimeout(r,1000*(attempt+1)));
+    }
+  }
+  setSyncStatus('err');
 }
 function queueSave(){if(_syncTimer)clearTimeout(_syncTimer);_syncTimer=setTimeout(saveToFirebase,2000);}
 async function saveExamResult(section,answers,score,total){
@@ -1688,7 +1698,7 @@ function boot(){
   const _fl=document.getElementById('fs-lbl');if(_fl)_fl.textContent=_fs;
   S.fontSize=_fs;
 
-  // ── Try loading from cache for instant start ──
+  // ── Show cached content immediately ──
   const cachedUser = localStorage.getItem('t45-user');
   const cachedData = localStorage.getItem('t45-data');
 
@@ -1708,7 +1718,7 @@ function boot(){
     renderLoginPage();
   }
 
-  // ── Wait for Firebase to load, then sync in background ──
+  // ── Wait for Firebase, then sync ──
   function initFirebase(){
     if(typeof firebase === 'undefined'){
       setTimeout(initFirebase, 100);
@@ -1728,20 +1738,40 @@ function boot(){
     window.RTDB = firebase.database();
     window.FAUTH = firebase.auth();
 
-    window.FAUTH.onAuthStateChanged(user=>{
+    window.FAUTH.onAuthStateChanged(async user=>{
       if(user){
         S.currentUser = user;
-        // Save user to cache
-        localStorage.setItem('t45-user', JSON.stringify({uid:user.uid, email:user.email, displayName:user.displayName}));
-        loadFromFirebase().then(()=>{
-          // Save data to cache after loading
-          localStorage.setItem('t45-data', JSON.stringify({
-            done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null
-          }));
-          buildSidebar();
-          renderHome();
-          const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
-        });
+        localStorage.setItem('t45-user', JSON.stringify({uid:user.uid, email:user.email}));
+
+        // Load from Firebase
+        try{
+          const snap = await window.RTDB.ref('students/'+user.uid).get();
+          if(snap.exists()){
+            const fbData = snap.val();
+            const fbDone = new Set(fbData.done||[]);
+            const fbMistakes = fbData.mistakes||{};
+
+            // MERGE: keep the larger set (local cache wins if ahead of Firebase)
+            const localDone = S.done; // already loaded from cache
+            const mergedDone = new Set([...fbDone, ...localDone]);
+            const mergedMistakes = {...fbMistakes};
+            Object.entries(S.mistakes||{}).forEach(([k,v])=>{
+              mergedMistakes[k] = Math.max(mergedMistakes[k]||0, v);
+            });
+
+            S.done = mergedDone;
+            S.mistakes = mergedMistakes;
+            S.examInfo = fbData.examInfo || S.examInfo || null;
+          }
+        }catch(e){ console.warn('Firebase load:', e.message); }
+
+        // Save merged state back to Firebase and cache
+        await saveToFirebase();
+        buildSidebar();
+        // Only re-render home if we're on home page
+        if(S.page==='home'||!S.page) renderHome();
+        const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+
       } else {
         S.currentUser = null;
         localStorage.removeItem('t45-user');
@@ -1752,7 +1782,6 @@ function boot(){
   }
   initFirebase();
 
-  // Update D-day every minute
   setInterval(()=>{
     const el=document.getElementById('dday-val');
     if(el){const _dd=getDDay();el.textContent=_dd===null?'D-?':(_dd>0?'D-'+_dd:(_dd===0?'D-Day!':'D+'+Math.abs(_dd)));}
