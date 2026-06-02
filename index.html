@@ -121,8 +121,8 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 .g-lbl{font-size:12px;color:var(--tx3);margin-left:4px}
 
 /* ── VOCAB ── */
-.vocab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:14px}
-.vt{background:var(--sur);border:1px solid var(--bdrl);border-radius:var(--r);padding:10px 12px;cursor:pointer;transition:.15s;box-shadow:var(--sh);touch-action:manipulation;user-select:none}
+.vocab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(140px,9em),1fr));gap:8px;margin-bottom:14px}
+.vt{background:var(--sur);border:1px solid var(--bdrl);border-radius:var(--r);padding:10px 12px;cursor:pointer;transition:.15s;box-shadow:var(--sh);touch-action:manipulation;user-select:none;overflow:hidden;word-break:break-word;min-height:60px;height:auto}
 .vt:active{transform:scale(.97)}
 .vt.flip .vt-kr{font-size:0.75em;opacity:.55}
 .vt.flip .vt-ru{color:var(--grn)}
@@ -340,7 +340,7 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
       <div class="sync-dot syncing" id="sync-dot" title="Синхронизация..."></div>
       <span id="tb-prog" style="font-size:12px;color:var(--tx3)"></span>
       <button class="btn btn-ghost btn-sm" id="btn-home" onclick="goHome()" style="display:none">← Главная</button>
-      <button class="btn btn-ghost btn-sm" id="btn-logout" onclick="doLogout()" style="display:none;font-size:11px;color:var(--tx3)" title="Выйти">⏻</button>
+      <button class="btn btn-ghost btn-sm" id="btn-logout" onclick="doLogout()" class="logged-in-only" style="display:none;font-size:13px;color:var(--tx3);padding:6px 10px" title="Выйти">⏻ Выйти</button>
     </div>
   </div>
   <div class="content" id="content"></div>
@@ -1513,50 +1513,95 @@ function renderRes(){
 
 // ── REVIEW DAY ──
 function renderRevDay(day){
+  const en=isJosh();
   const meta=PLAN.day_meta[day]||{};
   const revBlocks=PLAN.review_schedule[day]||[];
   const gForms=revBlocks.flatMap(b=>GB[b]||[]);
+  const gdb=getGDB();
   const vocab=shuffle(revBlocks.flatMap(b=>VOCAB[b]||[]));
 
   const tabs=[
-    {id:"review",label:"🔄 Повтор"},
-    {id:"rev-vocab",label:"🔤 Слова"},
-    {id:"rev-ex",label:"✏️ Тест"},
+    {id:"review",  label:en?"🔄 Review":"🔄 Повтор"},
+    {id:"rev-vocab",label:en?"🔤 Vocabulary":"🔤 Слова"},
+    {id:"rev-ex",  label:en?"✏️ Quiz":"✏️ Тест"},
   ];
-  let html=`<div class="hero hero-pur"><div class="hero-title">${meta.emoji||"🔄"} ${meta.title||"День "+day}</div><div class="hero-sub">${meta.topic||""}</div></div>`;
+
+  const heroTitle=en
+    ?(meta.title||"День "+day).replace("День","Day").replace("Повтор","Review")
+    :(meta.title||"День "+day);
+  const heroSub=en
+    ?(meta.topic||"").replace("Повтор","Review").replace("блоков","blocks")
+    :(meta.topic||"");
+
+  let html=`<div class="hero hero-pur">
+    <div class="hero-title">${meta.emoji||"🔄"} ${heroTitle}</div>
+    <div class="hero-sub">${heroSub}</div>
+    <div style="font-size:12px;opacity:.65;margin-top:4px">${revBlocks.length} ${en?"blocks":"блоков"} · ${gForms.length} ${en?"patterns":"конструкций"} · ${vocab.length} ${en?"words":"слов"}</div>
+  </div>`;
+
   html+=`<div class="tabs">`;
   tabs.forEach(t=>{html+=`<button class="tab ${S.tab===t.id?"active":""}" onclick="S.tab='${t.id}';renderDay()">${t.label}</button>`;});
   html+=`</div>`;
 
   if(S.tab==="review"){
-    html+=`<div class="card"><div class="card-hdr">Грамматика — нажмите для повтора</div><div class="rev-grid">`;
+    // Grammar cards
+    html+=`<div class="card"><div class="card-hdr">${en?"Grammar patterns — tap to review":"Грамматика — нажмите для повтора"}</div><div class="rev-grid">`;
     gForms.forEach(f=>{
-      const g=GDB[f];
+      const g=gdb[f];
       html+=`<div class="ri" onclick="showGModal('${f.replace(/'/g,"\'")}')">
         <div class="ri-form">${f}</div>
         ${g?`<div class="ri-tr">${g.translation}</div>`:""}
       </div>`;
     });
-    if(!gForms.length) html+=`<div style="color:var(--tx3);font-size:13px">Пройдите предыдущие дни</div>`;
+    if(!gForms.length) html+=`<div style="color:var(--tx3);font-size:13px">${en?"Complete previous days first":"Пройдите предыдущие дни"}</div>`;
     html+=`</div></div>`;
-    html+=`<div class="card"><div class="card-hdr">Что делать сегодня</div>
-      <ul style="font-size:13px;line-height:2.2;padding-left:18px;color:var(--tx2)">
-        <li>Карточки грамматики выше</li>
-        <li>Повтор слов (вкладка «Слова»)</li>
-        <li>Тест на повторение (вкладка «Тест»)</li>
-        <li>Послушать / почитать текст TOPIK (15–20 мин)</li>
+
+    // Todo list
+    const todoItems=en?[
+      "Study grammar cards above — tap each to review",
+      "Vocabulary review (Vocabulary tab)",
+      "Practice quiz (Quiz tab)",
+      "Listen to / read a TOPIK text (15–20 min)",
+    ]:[
+      "Карточки грамматики выше — нажмите для повтора",
+      "Повтор слов (вкладка «Слова»)",
+      "Тест на повторение (вкладка «Тест»)",
+      "Послушать / почитать текст TOPIK (15–20 мин)",
+    ];
+    html+=`<div class="card"><div class="card-hdr">${en?"What to do today":"Что делать сегодня"}</div>
+      <ul style="font-size:14px;line-height:2.4;padding-left:20px;color:var(--tx2)">
+        ${todoItems.map(i=>`<li>${i}</li>`).join("")}
       </ul>
     </div>`;
-    html+=`<button class="btn btn-p btn-full" onclick="markDone(${day});sendResult(${day},1,1);goHome()">✓ День выполнен</button>`;
+
   } else if(S.tab==="rev-vocab"){
-    html+=renderVTab(vocab.slice(0,60),[]);
+    // Vocab grouped by block
+    html+=`<div style="font-size:13px;color:var(--tx2);margin-bottom:14px;padding:10px 12px;background:var(--sur2);border-radius:var(--r)">${T("vocabHint")}</div>`;
+    revBlocks.forEach(block=>{
+      const bWords=VOCAB[block]||[];
+      if(!bWords.length) return;
+      html+=`<div style="font-size:12px;font-weight:700;color:var(--tx3);margin:14px 0 8px;text-transform:uppercase;letter-spacing:.05em">${block}</div>`;
+      html+=`<div class="vocab-grid">`;
+      bWords.forEach(w=>{
+        const meaning=en?(w.en||w.ru):w.ru;
+        const ctx=en?(w.ctx_en||w.ctx||""):w.ctx||"";
+        const isFlipped=S.vFlipped.has(w.kr);
+        html+=`<div class="vt ${isFlipped?"flipped":""}" onclick="flipCard('${w.kr.replace(/'/g,"\'")}')">
+          ${isFlipped?`<div class="vt-ru">${meaning}</div>${ctx?`<div class="vt-ctx">${ctx}</div>`:""}`:`<div class="vt-kr">${w.kr}</div>`}
+          <button class="spk-btn" onclick="event.stopPropagation();speak('${w.kr.replace(/'/g,"\'")}')">🔊</button>
+        </div>`;
+      });
+      html+=`</div>`;
+    });
+
   } else {
+    // Quiz tab
     if(S.exPhase==="start"){
       html+=`<div class="card" style="text-align:center;padding:28px">
         <div style="font-size:30px;margin-bottom:10px">🎯</div>
-        <div style="font-size:16px;font-weight:700;margin-bottom:8px">Тест повтора</div>
-        <div style="font-size:13px;color:var(--tx2);margin-bottom:18px">Грамматика + лексика из пройденных блоков</div>
-        <button class="btn btn-p btn-full" onclick="startRevEx()">Начать</button>
+        <div style="font-size:16px;font-weight:700;margin-bottom:8px">${en?"Review Quiz":"Тест повтора"}</div>
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:18px">${en?"Grammar + vocabulary from covered blocks":"Грамматика + лексика из пройденных блоков"}</div>
+        <button class="btn btn-p btn-full" onclick="startRevEx()">${en?"Start":"Начать"}</button>
       </div>`;
     } else if(S.exPhase==="done"){
       html+=renderRes();
@@ -1564,6 +1609,10 @@ function renderRevDay(day){
       html+=renderExTab(gForms,vocab.slice(0,30));
     }
   }
+
+  // "Day complete" button always at the bottom
+  html+=`<button class="btn btn-p btn-full" style="margin-top:16px" onclick="markDone(${day});goHome()">${T("dayDone")}</button>`;
+
   document.getElementById("content").innerHTML=html;
   attachHandlers();
 }
@@ -1727,7 +1776,7 @@ function isTeacher(){
 
 function renderLoginPage(){
   document.getElementById('btn-home').style.display='none';
-  const lb=document.getElementById('btn-logout');if(lb)lb.style.display='none';
+  const lb=document.getElementById('btn-logout');if(lb){lb.style.display='none';lb.style.visibility='hidden';};
   document.getElementById('tb-title').textContent='TOPIK II 🇰🇷';
   document.getElementById('tb-sub').textContent='Войдите чтобы начать';
   document.getElementById('content').innerHTML=`
@@ -1820,7 +1869,7 @@ function boot(){
       S.examInfo = d.examInfo||null;
       buildSidebar();
       renderHome();
-      const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+      const lb=document.getElementById('btn-logout');if(lb){lb.style.display='flex';lb.style.visibility='visible';};
     } catch(e){ localStorage.removeItem('t45-user'); localStorage.removeItem('t45-data'); }
   } else {
     renderLoginPage();
@@ -1863,7 +1912,7 @@ function boot(){
           if(isTeacher()){
             buildSidebar();
             openTeacher();
-            const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+            const lb=document.getElementById('btn-logout');if(lb){lb.style.display='flex';lb.style.visibility='visible';};
             return;
           }
           // ── CROSS-DEVICE MERGE ──
@@ -1904,7 +1953,7 @@ function boot(){
         buildSidebar();
         // Only re-render home if we're on home page
         if(S.page==='home'||!S.page) renderHome();
-        const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+        const lb=document.getElementById('btn-logout');if(lb){lb.style.display='flex';lb.style.visibility='visible';};
 
       } else {
         S.currentUser = null;
