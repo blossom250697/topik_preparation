@@ -1480,6 +1480,13 @@ function checkAns(){
     if(document.getElementById("mi")) document.getElementById("mi").disabled=true;
   }
   if(ok) S.exScore++;
+  // ── Record mistakes ──
+  if(!ok && ex){
+    // Use grammar form or vocab word as the mistake key
+    const key = ex.form || ex.kr || ex.q?.slice(0,30) || 'unknown';
+    S.mistakes[key] = (S.mistakes[key]||0) + 1;
+    queueSave();
+  }
   const fb=document.getElementById("fb");
   if(fb){fb.className="feedback "+(ok?"ok":"err");fb.textContent=fbTxt;fb.style.display="block";}
   const cb=document.getElementById("cb");const nb=document.getElementById("nb");
