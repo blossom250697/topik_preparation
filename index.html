@@ -346,28 +346,11 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" defer></script>
 <script>
-  // Initialise Firebase immediately — runs before the main script
-  (function(){
-    if(window.RTDB) return; // already done
-    if(typeof firebase === 'undefined') return;
-    if(!firebase.apps.length){
-      firebase.initializeApp({
-        apiKey:"AIzaSyB_R9ZstsaS07CYHcrUDPdwT_dFE-tgOCw",
-        authDomain:"topik-training.firebaseapp.com",
-        projectId:"topik-training",
-        storageBucket:"topik-training.firebasestorage.app",
-        messagingSenderId:"407936964173",
-        appId:"1:407936964173:web:553b1cef562503c6adee04",
-        databaseURL:"https://topik-training-default-rtdb.asia-southeast1.firebasedatabase.app"
-      });
-    }
-    window.RTDB = firebase.database();
-    window.FAUTH = firebase.auth();
-  })();
+  // Firebase initialised in boot() after defer scripts load
 </script>
 <script>
 // ── LOCALISATION ──
@@ -648,10 +631,14 @@ async function loadFromFirebase(){
 async function saveToFirebase(){
   localStorage.setItem('t45-done',JSON.stringify([...S.done]));
   localStorage.setItem('t45-mistakes',JSON.stringify(S.mistakes));
+  // Update full cache so next launch is instant
+  localStorage.setItem('t45-data', JSON.stringify({
+    done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null
+  }));
   setSyncStatus('syncing');
   try{
     if(!window.RTDB) throw new Error('no RTDB');
-    await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).update({done:[...S.done],mistakes:S.mistakes,lastSeen:Date.now(),name:'Катя'});
+    await window.RTDB.ref('students/'+(S.currentUser?.uid||'katya')).update({done:[...S.done],mistakes:S.mistakes,lastSeen:Date.now(),name:getStudentName(),examInfo:S.examInfo||null});
     setSyncStatus('ok');
   }catch(e){ console.warn('Firebase save:',e.message); setSyncStatus('err'); }
 }
@@ -1660,29 +1647,75 @@ function boot(){
   document.body.style.fontSize=_fs+'px';
   const _fl=document.getElementById('fs-lbl');if(_fl)_fl.textContent=_fs;
   S.fontSize=_fs;
-  // Show login screen first, wait for auth state
-  renderLoginPage();
-  if(window.FAUTH){
+
+  // ── Try loading from cache for instant start ──
+  const cachedUser = localStorage.getItem('t45-user');
+  const cachedData = localStorage.getItem('t45-data');
+
+  if(cachedUser && cachedData){
+    try{
+      const u = JSON.parse(cachedUser);
+      const d = JSON.parse(cachedData);
+      S.currentUser = u;
+      S.done = new Set(d.done||[]);
+      S.mistakes = d.mistakes||{};
+      S.examInfo = d.examInfo||null;
+      buildSidebar();
+      renderHome();
+      const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+    } catch(e){ localStorage.removeItem('t45-user'); localStorage.removeItem('t45-data'); }
+  } else {
+    renderLoginPage();
+  }
+
+  // ── Wait for Firebase to load, then sync in background ──
+  function initFirebase(){
+    if(typeof firebase === 'undefined'){
+      setTimeout(initFirebase, 100);
+      return;
+    }
+    if(!firebase.apps.length){
+      firebase.initializeApp({
+        apiKey:"AIzaSyB_R9ZstsaS07CYHcrUDPdwT_dFE-tgOCw",
+        authDomain:"topik-training.firebaseapp.com",
+        projectId:"topik-training",
+        storageBucket:"topik-training.firebasestorage.app",
+        messagingSenderId:"407936964173",
+        appId:"1:407936964173:web:553b1cef562503c6adee04",
+        databaseURL:"https://topik-training-default-rtdb.asia-southeast1.firebasedatabase.app"
+      });
+    }
+    window.RTDB = firebase.database();
+    window.FAUTH = firebase.auth();
+
     window.FAUTH.onAuthStateChanged(user=>{
       if(user){
-        S.currentUser=user;
+        S.currentUser = user;
+        // Save user to cache
+        localStorage.setItem('t45-user', JSON.stringify({uid:user.uid, email:user.email, displayName:user.displayName}));
         loadFromFirebase().then(()=>{
-        buildSidebar();renderHome();
-        const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
-      });
+          // Save data to cache after loading
+          localStorage.setItem('t45-data', JSON.stringify({
+            done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null
+          }));
+          buildSidebar();
+          renderHome();
+          const lb=document.getElementById('btn-logout');if(lb)lb.style.display='inline-flex';
+        });
       } else {
-        S.currentUser=null;
+        S.currentUser = null;
+        localStorage.removeItem('t45-user');
+        localStorage.removeItem('t45-data');
         renderLoginPage();
       }
     });
-  } else {
-    // Fallback if auth not available
-    loadFromFirebase().then(()=>{buildSidebar();renderHome();});
   }
+  initFirebase();
+
   // Update D-day every minute
   setInterval(()=>{
     const el=document.getElementById('dday-val');
-    if(el) el.textContent='D-'+getDDay();
+    if(el){const _dd=getDDay();el.textContent=_dd===null?'D-?':(_dd>0?'D-'+_dd:(_dd===0?'D-Day!':'D+'+Math.abs(_dd)));}
   },60000);
 }
 
