@@ -1255,47 +1255,69 @@ function switchTab(t){
 // ── GRAMMAR TAB ──
 function renderGTab(forms,blocks,secClass,secLabel){
   const _gdb=getGDB();
+  const en=isJosh();
   const known=forms.filter(f=>_gdb[f]);
-  const unknown=forms.filter(f=>!_gdb[f]);
-  if(!forms.length) return`<div style="text-align:center;padding:32px;color:var(--tx3)">Грамматика не добавлена</div>`;
+
+  if(!forms.length) return`<div style="text-align:center;padding:32px;color:var(--tx3)">${en?"Grammar not added yet":"Грамматика не добавлена"}</div>`;
+
+  // Split into review (first block) and new (second block)
+  const dayBlocks=PLAN.day_to_block[S.day]||[];
+  const hasReview=dayBlocks.length>=2;
+  const reviewForms=hasReview?(GB[dayBlocks[0]]||[]).filter(f=>_gdb[f]):[];
 
   let html=`<div class="sec-badge ${secClass}">${secLabel}</div>`;
+
   html+=`<div class="g-nav">`;
   known.forEach((f,i)=>{
-    html+=`<div class="g-dot ${i===S.gIdx?"active":""} ${i<S.gIdx?"seen":""}" onclick="goG(${i})"></div>`;
+    const isRev=reviewForms.includes(f);
+    html+=`<div class="g-dot ${i===S.gIdx?'active':''} ${i<S.gIdx?'seen':''}" onclick="goG(${i})" title="${f}" style="${isRev?'border-color:var(--gld)':''}"></div>`;
   });
   if(known.length) html+=`<span class="g-lbl">${S.gIdx+1}/${known.length}</span>`;
   html+=`</div>`;
 
   if(!known.length){
-    html+=`<div class="card"><div class="card-hdr">Конструкции дня</div>`;
-    forms.forEach(f=>{html+=`<div style="padding:7px 0;border-bottom:1px solid var(--bdrl);font-weight:700;color:var(--grn);font-size:14px">${f}</div>`;});
-    html+=`<div style="margin-top:10px;font-size:13px;color:var(--tx2)">📌 Подробные объяснения будут добавлены позже.</div></div>`;
+    html+=`<div class="card"><div class="card-hdr">${en?'Patterns':'Конструкции дня'}</div>`;
+    forms.forEach(f=>{html+=`<div style="padding:7px 0;border-bottom:1px solid var(--bdrl);font-weight:700;color:var(--grn)">${f}</div>`;});
+    html+=`</div>`;
   } else {
     const form=known[S.gIdx];
-    const g=GDB[form];
-    html+=`<div class="hero hero-grn"><div class="g-form">${form}</div><div class="g-tr">${g.translation}</div></div>`;
-    html+=`<div class="feel-box"><div class="feel-lbl">${T('feeling')}</div><div style="font-size:13px;line-height:1.6">${g.feel}</div></div>`;
+    const g=_gdb[form];
+    const isRev=reviewForms.includes(form);
+
+    if(hasReview){
+      if(isRev){
+        html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:var(--gldl);border-radius:var(--r);border-left:3px solid var(--gld)">
+          <span style="font-weight:700;color:var(--gld)">🔄 ${en?'Review from previous lesson':'Повтор с прошлого урока'}</span>
+        </div>`;
+      } else {
+        html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:var(--grnl);border-radius:var(--r);border-left:3px solid var(--grn)">
+          <span style="font-weight:700;color:var(--grn)">✨ ${en?'New today':'Новое сегодня'}</span>
+        </div>`;
+      }
+    }
+
+    html+=`<div class="hero hero-grn" ${isRev?'style="border-top:3px solid var(--gld)"':''}>
+      <div class="g-form">${form}</div>
+      <div class="g-tr">${g.translation}</div>
+    </div>`;
+    html+=`<div class="feel-box"><div class="feel-lbl">${T('feeling')}</div><div style="line-height:1.6">${g.feel}</div></div>`;
     html+=`<div class="rule-box"><div class="rule-lbl">${T('rule')}</div>${g.rule}</div>`;
     if(g.contrast) html+=`<div class="contrast-box">⚠️ ${g.contrast}</div>`;
-    html+=`<div class="card"><div class="card-hdr">Примеры</div>`;
-    g.examples.forEach(ex=>{html+=`<div class="ex-item"><div class="ex-kr">${ex.kr}</div><div class="ex-ru">${ex.ru}</div></div>`;});
+    html+=`<div class="card"><div class="card-hdr">${en?'Examples':'Примеры'}</div>`;
+    g.examples.forEach(ex=>{
+      const trans=en?(ex.en||ex.ru):ex.ru;
+      html+=`<div class="ex-item"><div class="ex-kr">${ex.kr}</div><div class="ex-ru">${trans}</div></div>`;
+    });
     html+=`</div>`;
     html+=`<div style="display:flex;gap:8px;flex-wrap:wrap">`;
-    if(S.gIdx>0) html+=`<button class="btn btn-sm" onclick="goG(${S.gIdx-1})">← Назад</button>`;
-    if(S.gIdx<known.length-1) html+=`<button class="btn btn-p btn-sm" onclick="goG(${S.gIdx+1})">Следующая →</button>`;
-    else html+=`<button class="btn btn-p btn-sm" onclick="switchTab('vocab')">К словам 🔤</button>`;
-    html+=`</div>`;
-  }
-  if(unknown.length){
-    html+=`<div class="card" style="margin-top:12px"><div class="card-hdr">Также в блоке</div>`;
-    unknown.forEach(f=>{html+=`<div style="padding:6px 0;border-bottom:1px solid var(--bdrl);color:var(--grn);font-size:13px;font-weight:500">${f}</div>`;});
+    if(S.gIdx>0) html+=`<button class="btn btn-sm" onclick="goG(${S.gIdx-1})">← ${en?'Back':'Назад'}</button>`;
+    if(S.gIdx<known.length-1) html+=`<button class="btn btn-p btn-sm" onclick="goG(${S.gIdx+1})">${T('next')}</button>`;
+    else html+=`<button class="btn btn-p btn-sm" onclick="switchTab('vocab')">${en?'To Vocabulary 🔤':'К словам 🔤'}</button>`;
     html+=`</div>`;
   }
   return html;
 }
 function goG(i){S.gIdx=i;renderDay();window.scrollTo(0,0);}
-
 // ── VOCAB TAB ──
 function renderVTab(words,blocks){
   if(!words.length) return`<div style="text-align:center;padding:32px;color:var(--tx3)">Слова не добавлены</div>`;
