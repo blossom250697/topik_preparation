@@ -692,6 +692,26 @@ async function saveToFirebase(){
   throw new Error('Firebase save failed after 3 attempts');
 }
 function queueSave(){if(_syncTimer)clearTimeout(_syncTimer);_syncTimer=setTimeout(saveToFirebase,2000);}
+
+// ── BACKGROUND SYNC — retry if data in localStorage is newer than Firebase ──
+let _bgSyncTimer=null;
+async function bgSync(){
+  if(isTeacher()||!S.currentUser||!window.RTDB) return;
+  try{
+    // Check if local data has more done days than Firebase
+    const snap=await window.RTDB.ref('students/'+getStudentUID()+'/done').get();
+    const fbDone=new Set(snap.exists()?snap.val()||[]:[]);
+    const localDone=S.done;
+    // If local has more days — push to Firebase
+    if(localDone.size>fbDone.size){
+      console.log('bgSync: local ahead of Firebase, pushing...');
+      await saveToFirebase();
+      console.log('bgSync: done');
+    }
+  }catch(e){ /* silent */ }
+}
+// Run background sync every 30 seconds
+setInterval(bgSync, 30000);
 async function saveExamResult(section,answers,score,total){
   try{
     if(!window.RTDB)return;
@@ -2043,6 +2063,13 @@ function boot(){
     });
   }
   initFirebase();
+
+  // Sync when user returns to the tab
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='visible' && S.currentUser && !isTeacher()){
+      bgSync();
+    }
+  });
 
   setInterval(()=>{
     const el=document.getElementById('dday-val');
