@@ -669,13 +669,11 @@ async function loadFromFirebase(){
 }
 async function saveToFirebase(){
   if(isTeacher()){ setSyncStatus("ok"); return; }
-  // Always save to localStorage first (instant, never fails)
   const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}};
   localStorage.setItem('t45-done', JSON.stringify([...S.done]));
   localStorage.setItem('t45-mistakes', JSON.stringify(S.mistakes));
   localStorage.setItem('t45-data', JSON.stringify(data));
   setSyncStatus('syncing');
-  // Retry up to 3 times if Firebase not ready
   for(let attempt=0; attempt<3; attempt++){
     try{
       if(!window.RTDB) throw new Error('no RTDB');
@@ -684,13 +682,14 @@ async function saveToFirebase(){
         name:getStudentName(), examInfo:S.examInfo||null, dayLog:S.dayLog||{}
       });
       setSyncStatus('ok');
-      return;
+      return; // ✅ success
     }catch(e){
       console.warn('Firebase save attempt '+(attempt+1)+':', e.message);
-      if(attempt<2) await new Promise(r=>setTimeout(r,1000*(attempt+1)));
+      if(attempt<2) await new Promise(r=>setTimeout(r,1500*(attempt+1)));
     }
   }
   setSyncStatus('err');
+  throw new Error('Firebase save failed after 3 attempts');
 }
 function queueSave(){if(_syncTimer)clearTimeout(_syncTimer);_syncTimer=setTimeout(saveToFirebase,2000);}
 async function saveExamResult(section,answers,score,total){
