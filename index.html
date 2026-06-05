@@ -1212,18 +1212,11 @@ function renderHome(){
   const _cm=T('chanceMsg');const chanceMsg=chance>=70?_cm[0]:chance>=45?_cm[1]:_cm[2];
 
   // Debug sync status for non-teacher
-  const syncDebug = !isTeacher() ? `
-    <div id="sync-debug" style="display:none;margin:8px 0;padding:10px 12px;background:rgba(0,0,0,.3);border-radius:8px;font-size:11px;font-family:monospace;color:#fff;line-height:1.8">
-      Загрузка диагностики...
-    </div>
-    <button onclick="runSyncTest()" style="margin-bottom:8px;padding:5px 12px;font-size:11px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:99px;color:#fff;cursor:pointer">
-      🔧 Тест соединения
-    </button>` : '';
+  const syncDebug = '';
 
   let html=`<div class="home-hero">
     <div class="hh-t">${T("welcome")}, ${getStudentName()}! 👋</div>
     <div class="hh-s">듣기 + 읽기 · ${totalWords} слов · ${totalG} конструкций</div>
-    ${syncDebug}
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;flex:1;min-width:130px">
         <div style="font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">${T("daysLeft")}</div>
