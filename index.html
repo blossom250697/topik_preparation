@@ -1135,6 +1135,49 @@ function buildSidebar(){
 function togglePhase(el){el.classList.toggle("open");}
 
 // ── ROUTING ──
+async function runSyncTest(){
+  const box = document.getElementById('sync-debug');
+  if(!box) return;
+  box.style.display = 'block';
+  box.textContent = '⏳ Тестирование...';
+
+  const lines = [];
+  const add = (s) => { lines.push(s); box.innerHTML = lines.join('<br>'); };
+
+  add('▶ email: ' + (S.currentUser?.email || 'НЕТ'));
+  add('▶ uid сессии: ' + (S.currentUser?.uid || 'НЕТ'));
+  add('▶ isKatya(): ' + isKatya());
+  add('▶ getStudentUID(): ' + getStudentUID());
+  add('▶ RTDB готов: ' + (window.RTDB ? 'ДА' : 'НЕТ'));
+  add('▶ FAUTH готов: ' + (window.FAUTH ? 'ДА' : 'НЕТ'));
+  add('▶ done локально: ' + [...S.done].join(','));
+
+  // Test read
+  try{
+    const snap = await window.RTDB.ref('students/'+getStudentUID()).get();
+    add('▶ чтение Firebase: ✅ done=' + JSON.stringify(snap.val()?.done));
+  }catch(e){
+    add('▶ чтение Firebase: ❌ ' + e.message);
+  }
+
+  // Test write
+  try{
+    await window.RTDB.ref('students/'+getStudentUID()).update({lastSeen: Date.now(), name: getStudentName()});
+    add('▶ запись Firebase: ✅ OK');
+  }catch(e){
+    add('▶ запись Firebase: ❌ ' + e.message);
+  }
+
+  // Try full save
+  try{
+    await saveToFirebase();
+    add('▶ saveToFirebase: ✅ ВСЁ СОХРАНЕНО');
+    add('✅ done в Firebase: ' + [...S.done].join(','));
+  }catch(e){
+    add('▶ saveToFirebase: ❌ ' + e.message);
+  }
+}
+
 function goHome(){
   S.page="home";S.day=null;
   document.getElementById("btn-home").style.display="none";
@@ -1168,9 +1211,19 @@ function renderHome(){
   const offset=Math.round(circ*(1-chance/100));
   const _cm=T('chanceMsg');const chanceMsg=chance>=70?_cm[0]:chance>=45?_cm[1]:_cm[2];
 
+  // Debug sync status for non-teacher
+  const syncDebug = !isTeacher() ? `
+    <div id="sync-debug" style="display:none;margin:8px 0;padding:10px 12px;background:rgba(0,0,0,.3);border-radius:8px;font-size:11px;font-family:monospace;color:#fff;line-height:1.8">
+      Загрузка диагностики...
+    </div>
+    <button onclick="runSyncTest()" style="margin-bottom:8px;padding:5px 12px;font-size:11px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:99px;color:#fff;cursor:pointer">
+      🔧 Тест соединения
+    </button>` : '';
+
   let html=`<div class="home-hero">
     <div class="hh-t">${T("welcome")}, ${getStudentName()}! 👋</div>
     <div class="hh-s">듣기 + 읽기 · ${totalWords} слов · ${totalG} конструкций</div>
+    ${syncDebug}
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;flex:1;min-width:130px">
         <div style="font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">${T("daysLeft")}</div>
