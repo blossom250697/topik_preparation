@@ -698,15 +698,19 @@ let _bgSyncTimer=null;
 async function bgSync(){
   if(isTeacher()||!S.currentUser||!window.RTDB) return;
   try{
-    // Check if local data has more done days than Firebase
-    const snap=await window.RTDB.ref('students/'+getStudentUID()+'/done').get();
-    const fbDone=new Set(snap.exists()?snap.val()||[]:[]);
-    const localDone=S.done;
-    // If local has more days — push to Firebase
-    if(localDone.size>fbDone.size){
-      console.log('bgSync: local ahead of Firebase, pushing...');
+    const snap=await window.RTDB.ref('students/'+getStudentUID()).get();
+    if(!snap.exists()){
+      await saveToFirebase(); return;
+    }
+    const fb=snap.val();
+    const fbDoneCount=(fb.done||[]).length;
+    const fbMistakesTotal=Object.values(fb.mistakes||{}).reduce((a,b)=>a+b,0);
+    const localDoneCount=S.done.size;
+    const localMistakesTotal=Object.values(S.mistakes||{}).reduce((a,b)=>a+b,0);
+    // Push if local has more data than Firebase
+    if(localDoneCount>fbDoneCount || localMistakesTotal>fbMistakesTotal){
+      console.log(`bgSync: pushing (done ${localDoneCount} vs ${fbDoneCount}, mistakes ${localMistakesTotal} vs ${fbMistakesTotal})`);
       await saveToFirebase();
-      console.log('bgSync: done');
     }
   }catch(e){ /* silent */ }
 }
@@ -1569,7 +1573,12 @@ function checkAns(){
     // Use grammar form or vocab word as the mistake key
     const key = ex.form || ex.kr || ex.q?.slice(0,30) || 'unknown';
     S.mistakes[key] = (S.mistakes[key]||0) + 1;
-    queueSave();
+    // Save immediately to localStorage (fast) and queue Firebase sync
+    localStorage.setItem('t45-mistakes', JSON.stringify(S.mistakes));
+    localStorage.setItem('t45-data', JSON.stringify({
+      done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}
+    }));
+    queueSave(); // Firebase sync in background
   }
   const fb=document.getElementById("fb");
   if(fb){fb.className="feedback "+(ok?"ok":"err");fb.textContent=fbTxt;fb.style.display="block";}
@@ -1747,7 +1756,8 @@ function markDone(day, score, total){
     pct: (score!=null&&total)?Math.round(score/total*100):null
   };
   buildSidebar();
-  // Save immediately (not queued) and show toast
+  // Cancel any pending queueSave and save immediately with all data
+  if(_syncTimer){ clearTimeout(_syncTimer); _syncTimer=null; }
   saveToFirebase().then(()=>{
     showSaveToast(isJosh() ? '✅ Day saved to cloud!' : '✅ День сохранён в облаке!');
   }).catch(()=>{
