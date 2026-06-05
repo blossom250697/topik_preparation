@@ -1910,12 +1910,36 @@ function renderLoginPage(){
         </div>
         <div id="auth-err" style="color:var(--red);font-size:13px;margin-bottom:12px;display:none;padding:8px 12px;background:var(--redl);border-radius:var(--r)"></div>
         <button class="btn btn-p btn-full" onclick="doLogin()" id="login-btn">Войти →</button>
+        <button class="btn btn-full" onclick="doRegister()" id="reg-btn" style="margin-top:8px;background:transparent;border:1px solid var(--bdr);color:var(--tx2)">Зарегистрироваться</button>
       </div>
       <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--tx3)">
         Если забыли пароль — обратитесь к учителю
       </div>
     </div>`;
   setTimeout(()=>document.getElementById('auth-email')?.focus(),150);
+}
+
+async function doRegister(){
+  const email=(document.getElementById('auth-email')?.value||'').trim();
+  const pass=document.getElementById('auth-pass')?.value||'';
+  const btn=document.getElementById('reg-btn');
+  if(!email||!pass){showAuthErr('Введите email и пароль');return;}
+  if(pass.length<6){showAuthErr('Пароль минимум 6 символов');return;}
+  if(btn){btn.textContent='Создаём аккаунт...';btn.disabled=true;}
+  try{
+    const data = await apiCall('/api/register','POST',{email,password:pass});
+    localStorage.setItem('t45-token', data.token);
+    localStorage.setItem('t45-user', JSON.stringify(data.user));
+    S.currentUser = data.user;
+    await loadFromFirebase();
+    buildSidebar();
+    renderHome();
+    const lb=document.getElementById('btn-logout');
+    if(lb){lb.style.display='flex';lb.style.visibility='visible';}
+  }catch(e){
+    if(btn){btn.textContent='Зарегистрироваться';btn.disabled=false;}
+    showAuthErr(e.message==='Email already exists'?'Этот email уже зарегистрирован':e.message);
+  }
 }
 
 async function doLogin(){
