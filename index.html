@@ -355,24 +355,9 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script>const API_URL="https://web-production-b124e.up.railway.app";</script>
 <script>
-  // Firebase is loaded synchronously — init immediately
-  if(typeof firebase !== 'undefined' && !firebase.apps.length){
-    firebase.initializeApp({
-      apiKey:"AIzaSyB_R9ZstsaS07CYHcrUDPdwT_dFE-tgOCw",
-      authDomain:"topik-training.firebaseapp.com",
-      projectId:"topik-training",
-      storageBucket:"topik-training.firebasestorage.app",
-      messagingSenderId:"407936964173",
-      appId:"1:407936964173:web:553b1cef562503c6adee04",
-      databaseURL:"https://topik-training-default-rtdb.asia-southeast1.firebasedatabase.app"
-    });
-    window.RTDB = firebase.database();
-    window.FAUTH = firebase.auth();
-  }
+  // Railway API — no Firebase needed
 </script>
 <script>
 // ── LOCALISATION ──
@@ -653,20 +638,39 @@ function renderSchedulePage(){
 
 // ── FIREBASE SYNC ──
 let _syncTimer=null;
+// ── RAILWAY API ──
+async function apiCall(path, method='GET', body=null){
+  const token = localStorage.getItem('t45-token');
+  const opts = {
+    method,
+    headers: {'Content-Type':'application/json', ...(token?{'Authorization':'Bearer '+token}:{})},
+    ...(body?{body:JSON.stringify(body)}:{})
+  };
+  const res = await fetch(API_URL+path, opts);
+  if(!res.ok){
+    const err = await res.json().catch(()=>({error:res.statusText}));
+    throw new Error(err.error||res.statusText);
+  }
+  return res.json();
+}
+
 async function loadFromFirebase(){
   if(isTeacher()){ setSyncStatus("ok"); return; }
   setSyncStatus('syncing');
   try{
-    if(!window.RTDB) throw new Error('RTDB not ready');
-    const snap=await window.RTDB.ref('students/'+getStudentUID()).get();
-    if(snap.exists()){const d=snap.val();S.done=new Set(d.done||[]);S.mistakes=d.mistakes||{};S.dayLog=d.dayLog||{};}
+    const data = await apiCall('/api/me');
+    S.done = new Set(data.done||[]);
+    S.mistakes = data.mistakes||{};
+    S.dayLog = data.day_log||{};
+    S.examInfo = data.exam_info||null;
     setSyncStatus('ok');
   }catch(e){
-    console.warn('Firebase load:',e.message); setSyncStatus('err');
-    S.done=new Set(JSON.parse(localStorage.getItem('t45-done')||'[]'));
-    S.mistakes=JSON.parse(localStorage.getItem('t45-mistakes')||'{}');
+    console.warn('API load:', e.message); setSyncStatus('err');
+    S.done = new Set(JSON.parse(localStorage.getItem('t45-done')||'[]'));
+    S.mistakes = JSON.parse(localStorage.getItem('t45-mistakes')||'{}');
   }
 }
+
 async function saveToFirebase(){
   if(isTeacher()){ setSyncStatus("ok"); return; }
   const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}};
@@ -676,50 +680,42 @@ async function saveToFirebase(){
   setSyncStatus('syncing');
   for(let attempt=0; attempt<3; attempt++){
     try{
-      if(!window.RTDB) throw new Error('no RTDB');
-      await window.RTDB.ref('students/'+getStudentUID()).update({
-        done:[...S.done], mistakes:S.mistakes, lastSeen:Date.now(),
-        name:getStudentName(), examInfo:S.examInfo||null, dayLog:S.dayLog||{}
+      await apiCall('/api/save', 'POST', {
+        done:[...S.done], mistakes:S.mistakes,
+        day_log:S.dayLog||{}, exam_info:S.examInfo||null
       });
       setSyncStatus('ok');
-      return; // ✅ success
+      return;
     }catch(e){
-      console.warn('Firebase save attempt '+(attempt+1)+':', e.message);
+      console.warn('API save attempt '+(attempt+1)+':', e.message);
       if(attempt<2) await new Promise(r=>setTimeout(r,1500*(attempt+1)));
     }
   }
   setSyncStatus('err');
-  throw new Error('Firebase save failed after 3 attempts');
+  throw new Error('Save failed after 3 attempts');
 }
+
 function queueSave(){if(_syncTimer)clearTimeout(_syncTimer);_syncTimer=setTimeout(saveToFirebase,2000);}
 
-// ── BACKGROUND SYNC — retry if data in localStorage is newer than Firebase ──
-let _bgSyncTimer=null;
 async function bgSync(){
-  if(isTeacher()||!S.currentUser||!window.RTDB) return;
+  if(isTeacher()||!S.currentUser) return;
   try{
-    const snap=await window.RTDB.ref('students/'+getStudentUID()).get();
-    if(!snap.exists()){
-      await saveToFirebase(); return;
-    }
-    const fb=snap.val();
+    const fb = await apiCall('/api/me');
     const fbDoneCount=(fb.done||[]).length;
     const fbMistakesTotal=Object.values(fb.mistakes||{}).reduce((a,b)=>a+b,0);
     const localDoneCount=S.done.size;
     const localMistakesTotal=Object.values(S.mistakes||{}).reduce((a,b)=>a+b,0);
-    // Push if local has more data than Firebase
-    if(localDoneCount>fbDoneCount || localMistakesTotal>fbMistakesTotal){
-      console.log(`bgSync: pushing (done ${localDoneCount} vs ${fbDoneCount}, mistakes ${localMistakesTotal} vs ${fbMistakesTotal})`);
+    if(localDoneCount>fbDoneCount||localMistakesTotal>fbMistakesTotal){
       await saveToFirebase();
     }
-  }catch(e){ /* silent */ }
+  }catch(e){}
 }
+setInterval(bgSync, 30000);
 // Run background sync every 30 seconds
 setInterval(bgSync, 30000);
 async function saveExamResult(section,answers,score,total){
   try{
-    if(!window.RTDB)return;
-    await window.RTDB.ref('exam_results').push({section,answers,score,total,pct:Math.round(score/total*100),timestamp:Date.now(),name:getStudentName()});
+    await apiCall('/api/exam-result','POST',{section,answers,score,total,pct:Math.round(score/total*100)});
   }catch(e){console.warn('Exam save:',e);}
 }
 
@@ -875,56 +871,21 @@ function checkPin(){} // не используется
 async function loadTeacherData(){
   document.getElementById('content').innerHTML=`<div style='text-align:center;padding:32px;color:var(--tx3)'>⏳ Загрузка данных учеников...</div>`;
   try{
-    if(!window.RTDB) throw new Error('Firebase не подключён. Подождите несколько секунд и нажмите Обновить.');
-    let allStudents={};
-    let eResults=[];
-
-    // Read ALL students
-    const sS=await window.RTDB.ref('students').get();
-    if(sS.exists()){
-      allStudents=sS.val();
-      // Show debug: what UIDs are in Firebase
-      console.log('Firebase students raw:', JSON.stringify(allStudents, null, 2));
-    } else {
-      console.log('Firebase students: EMPTY - no data at students/');
-    }
-
-    // Exclude teacher
-    const teacherUid=S.currentUser?.uid;
-    const allRaw={...allStudents};
-    // Exclude teacher's own record(s)
-    if(teacherUid && allStudents[teacherUid]) delete allStudents[teacherUid];
-    // Build clean student list: keep only known canonical student UIDs
-    // plus any UID that has actual progress (done days > 0)
-    const KNOWN_STUDENT_UIDS = [KATYA_CANONICAL_UID]; // add more as students join
-    Object.keys(allStudents).forEach(uid=>{
-      const d = allStudents[uid];
-      if(!d.name) { delete allStudents[uid]; return; }
-      // If uid is not a known student UID AND has no done days — it's likely a stale teacher record
-      const hasDone = (d.done||[]).length > 0;
-      const isKnown = KNOWN_STUDENT_UIDS.includes(uid);
-      if(!hasDone && !isKnown) delete allStudents[uid];
-    });
-
-    const eS=await window.RTDB.ref('exam_results').orderByChild('timestamp').limitToLast(50).get();
-    if(eS.exists()) eS.forEach(c=>eResults.unshift({id:c.key,...c.val()}));
-
-    renderTeacherDash(allStudents, eResults, allRaw, teacherUid);
+    const [students, examResults] = await Promise.all([
+      apiCall('/api/students'),
+      apiCall('/api/exam-results')
+    ]);
+    renderTeacherDash(students, examResults);
   }catch(e){
     document.getElementById('content').innerHTML=`<div style="text-align:center;padding:32px">
       <div style="color:var(--red);margin-bottom:12px">Ошибка: ${e.message}</div>
       <button class="btn btn-sm" onclick="loadTeacherData()">🔄 Повторить</button>
-      <div style="margin-top:16px;font-size:12px;color:var(--tx3);text-align:left;background:var(--sur2);padding:12px;border-radius:var(--r)">
-        <b>Диагностика:</b><br>
-        Firebase ready: ${window.RTDB?'✅':'❌'}<br>
-        Auth user: ${S.currentUser?.email||'не авторизован'}<br>
-        UID: ${S.currentUser?.uid||'—'}
-      </div>
     </div>`;
   }
 }
 function renderTeacherDash(allStudents, eResults, allRaw, teacherUid){
-  const entries=Object.entries(allStudents||{});
+  // Railway returns array of students
+  const entries = Array.isArray(allStudents) ? allStudents.map(s=>[s.id,s]) : Object.entries(allStudents||{});
   const rawEntries=Object.entries(allRaw||{});
 
   let html=`<div class="hero hero-grn">
@@ -964,14 +925,15 @@ function renderTeacherDash(allStudents, eResults, allRaw, teacherUid){
       const errTotal=Object.values(mis).reduce((a,b)=>a+b,0);
       const mSorted=Object.entries(mis).sort((a,b)=>b[1]-a[1]);
       const lastSeen=d.lastSeen?new Date(d.lastSeen).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-      const flag=d.name==='Josh'||d.name==='Джош'?'🇨🇦':(d.name&&d.name!=='Учитель')?'🎓':'👤';
+      const studentName = d.email ? d.email.split('@')[0] : (d.name||'student');
+      const flag=(d.email||'').includes('josh')?'🇨🇦':'🎓';
 
       html+=`<div class="card" style="margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
           <div style="font-size:28px">${flag}</div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:16px">${d.name||'Студент'}</div>
-            <div style="font-size:12px;color:var(--tx3)">Последний вход: ${lastSeen}</div>
+            <div style="font-weight:700;font-size:16px">${studentName}</div>
+            <div style="font-size:12px;color:var(--tx3)">${d.email||''} · Последний вход: ${lastSeen}</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:22px;font-weight:700;color:var(--grn)">${pct}%</div>
@@ -1014,7 +976,7 @@ function renderTeacherDash(allStudents, eResults, allRaw, teacherUid){
       html+=`</div></div>`;
 
       // ── Progress table ──
-      const dayLog = d.dayLog||{};
+      const dayLog = d.day_log||d.dayLog||{};
       const logEntries = Object.entries(dayLog).sort((a,b)=>Number(a[0])-Number(b[0]));
       if(logEntries.length){
         html+=`<div style="margin-top:14px">
@@ -1148,24 +1110,16 @@ async function runSyncTest(){
   add('▶ uid сессии: ' + (S.currentUser?.uid || 'НЕТ'));
   add('▶ isKatya(): ' + isKatya());
   add('▶ getStudentUID(): ' + getStudentUID());
-  add('▶ RTDB готов: ' + (window.RTDB ? 'ДА' : 'НЕТ'));
-  add('▶ FAUTH готов: ' + (window.FAUTH ? 'ДА' : 'НЕТ'));
+  add('▶ API_URL: ' + API_URL);
+  add('▶ Token: ' + (localStorage.getItem('t45-token') ? 'есть' : 'НЕТ'));
   add('▶ done локально: ' + [...S.done].join(','));
 
-  // Test read
+  // Test API read
   try{
-    const snap = await window.RTDB.ref('students/'+getStudentUID()).get();
-    add('▶ чтение Firebase: ✅ done=' + JSON.stringify(snap.val()?.done));
+    const me = await apiCall('/api/me');
+    add('▶ чтение API: ✅ done=' + JSON.stringify(me.done));
   }catch(e){
-    add('▶ чтение Firebase: ❌ ' + e.message);
-  }
-
-  // Test write
-  try{
-    await window.RTDB.ref('students/'+getStudentUID()).update({lastSeen: Date.now(), name: getStudentName()});
-    add('▶ запись Firebase: ✅ OK');
-  }catch(e){
-    add('▶ запись Firebase: ❌ ' + e.message);
+    add('▶ чтение API: ❌ ' + e.message);
   }
 
   // Try full save
@@ -1967,25 +1921,28 @@ function renderLoginPage(){
 async function doLogin(){
   const email=(document.getElementById('auth-email')?.value||'').trim();
   const pass=document.getElementById('auth-pass')?.value||'';
-  const errEl=document.getElementById('auth-err');
   const btn=document.getElementById('login-btn');
   if(!email||!pass){showAuthErr('Введите email и пароль');return;}
   if(btn){btn.textContent=T('loginLoading');btn.disabled=true;}
   try{
-    if(!window.FAUTH) throw new Error('Auth не готов — обновите страницу');
-    await window.FAUTH.signInWithEmailAndPassword(email, pass);
-    // onAuthStateChanged сам вызовет renderHome()
+    const data = await apiCall('/api/login','POST',{email,password:pass});
+    localStorage.setItem('t45-token', data.token);
+    localStorage.setItem('t45-user', JSON.stringify(data.user));
+    S.currentUser = data.user;
+    // Load progress from server
+    await loadFromFirebase();
+    buildSidebar();
+    renderHome();
+    const lb=document.getElementById('btn-logout');
+    if(lb){lb.style.display='flex';lb.style.visibility='visible';}
   }catch(e){
     if(btn){btn.textContent=T('loginBtn');btn.disabled=false;}
     const msgs={
-      'auth/user-not-found':'Пользователь не найден',
-      'auth/wrong-password':'Неверный пароль',
-      'auth/invalid-email':'Неверный формат email',
-      'auth/too-many-requests':'Слишком много попыток, подождите немного',
-      'auth/invalid-credential':'Неверный email или пароль',
-      'auth/network-request-failed':'Нет сети, проверьте подключение',
+      'User not found':'Пользователь не найден',
+      'Wrong password':'Неверный пароль',
+      'Email and password required':'Введите email и пароль',
     };
-    showAuthErr(msgs[e.code]||e.message);
+    showAuthErr(msgs[e.message]||e.message);
   }
 }
 
@@ -1995,7 +1952,9 @@ function showAuthErr(msg){
 }
 
 function doLogout(){
-  if(window.FAUTH) window.FAUTH.signOut();
+  localStorage.removeItem('t45-token');
+  localStorage.removeItem('t45-user');
+  localStorage.removeItem('t45-data');
   S.currentUser=null;
   S.teacherUnlocked=false;
   renderLoginPage();
@@ -2009,118 +1968,42 @@ function boot(){
   const _fl=document.getElementById('fs-lbl');if(_fl)_fl.textContent=_fs;
   S.fontSize=_fs;
 
-  // ── Show cached content immediately ──
+  // ── Try cached session ──
   const cachedUser = localStorage.getItem('t45-user');
   const cachedData = localStorage.getItem('t45-data');
+  const token = localStorage.getItem('t45-token');
 
-  if(cachedUser && cachedData){
+  if(cachedUser && token){
     try{
       const u = JSON.parse(cachedUser);
-      const d = JSON.parse(cachedData);
       S.currentUser = u;
-      S.done = new Set(d.done||[]);
-      S.mistakes = d.mistakes||{};
-      S.examInfo = d.examInfo||null;
-      S.dayLog = d.dayLog||{};
+      if(cachedData){
+        const d = JSON.parse(cachedData);
+        S.done = new Set(d.done||[]);
+        S.mistakes = d.mistakes||{};
+        S.examInfo = d.examInfo||null;
+        S.dayLog = d.dayLog||{};
+      }
       buildSidebar();
-      renderHome();
-      const lb=document.getElementById('btn-logout');if(lb){lb.style.display='flex';lb.style.visibility='visible';};
-    } catch(e){ localStorage.removeItem('t45-user'); localStorage.removeItem('t45-data'); }
+      if(isTeacher()) openTeacher();
+      else renderHome();
+      const lb=document.getElementById('btn-logout');
+      if(lb){lb.style.display='flex';lb.style.visibility='visible';}
+      // Sync in background
+      loadFromFirebase().then(()=>{
+        buildSidebar();
+        if(!isTeacher() && (S.page==='home'||!S.page)) renderHome();
+      }).catch(()=>{});
+    }catch(e){
+      localStorage.removeItem('t45-user');
+      localStorage.removeItem('t45-token');
+      renderLoginPage();
+    }
   } else {
     renderLoginPage();
   }
 
-  // ── Wait for Firebase, then sync ──
-  function initFirebase(){
-    if(typeof firebase === 'undefined'){
-      setTimeout(initFirebase, 100);
-      return;
-    }
-    if(!firebase.apps.length){
-      firebase.initializeApp({
-        apiKey:"AIzaSyB_R9ZstsaS07CYHcrUDPdwT_dFE-tgOCw",
-        authDomain:"topik-training.firebaseapp.com",
-        projectId:"topik-training",
-        storageBucket:"topik-training.firebasestorage.app",
-        messagingSenderId:"407936964173",
-        appId:"1:407936964173:web:553b1cef562503c6adee04",
-        databaseURL:"https://topik-training-default-rtdb.asia-southeast1.firebasedatabase.app"
-      });
-    }
-    if(!window.RTDB) window.RTDB = firebase.database();
-    if(!window.FAUTH) window.FAUTH = firebase.auth();
-
-    window.FAUTH.onAuthStateChanged(async user=>{
-      if(user){
-        S.currentUser = user;
-        localStorage.setItem('t45-user', JSON.stringify({uid:user.uid, email:user.email}));
-
-        // Update lastSeen immediately — don't wait for full save
-        if(window.RTDB && !isTeacher()){
-          window.RTDB.ref('students/'+getStudentUID()).update({lastSeen:Date.now(), name:getStudentName()}).catch(()=>{});
-        }
-
-        // Load from Firebase
-        try{
-          const snap = await window.RTDB.ref('students/'+getStudentUID()).get();
-          
-          if(isTeacher()){
-            buildSidebar();
-            openTeacher();
-            const lb=document.getElementById('btn-logout');if(lb){lb.style.display='flex';lb.style.visibility='visible';};
-            return;
-          }
-          // ── CROSS-DEVICE MERGE ──
-          // Find all records for this student (by canonical UID or known name variants)
-          const allSnap = await window.RTDB.ref('students').get();
-          let mergedDone = new Set(S.done);
-          let mergedMistakes = {...(S.mistakes||{})};
-          let mergedExamInfo = S.examInfo || null;
-          
-          if(allSnap.exists()){
-            const allData = allSnap.val();
-            const myUID = getStudentUID();
-            const myEmailPrefix = (user.email||'').split('@')[0].toLowerCase();
-            Object.entries(allData).forEach(([uid, d])=>{
-              const dName = (d.name||'').toLowerCase();
-              // Match: same canonical UID, or same session UID, or name matches email prefix or legacy "Катя"/"катя"
-              const isMe = uid === myUID || uid === user.uid ||
-                           dName === myEmailPrefix ||
-                           (isKatya() && (dName === 'катя' || dName === 'katya'));
-              if(isMe){
-                (d.done||[]).forEach(day => mergedDone.add(day));
-                Object.entries(d.mistakes||{}).forEach(([k,v])=>{
-                  mergedMistakes[k] = Math.max(mergedMistakes[k]||0, v);
-                });
-                if(!mergedExamInfo && d.examInfo) mergedExamInfo = d.examInfo;
-              }
-            });
-          }
-          
-          S.done = mergedDone;
-          S.mistakes = mergedMistakes;
-          S.examInfo = mergedExamInfo;
-          
-        }catch(e){ console.warn('Firebase load:', e.message); }
-
-        // Save merged state back to Firebase and cache
-        await saveToFirebase();
-        buildSidebar();
-        // Only re-render home if we're on home page
-        if(S.page==='home'||!S.page) renderHome();
-        const lb=document.getElementById('btn-logout');if(lb){lb.style.display='flex';lb.style.visibility='visible';};
-
-      } else {
-        S.currentUser = null;
-        localStorage.removeItem('t45-user');
-        localStorage.removeItem('t45-data');
-        renderLoginPage();
-      }
-    });
-  }
-  initFirebase();
-
-  // Sync when user returns to the tab
+  // Sync on tab focus
   document.addEventListener('visibilitychange', ()=>{
     if(document.visibilityState==='visible' && S.currentUser && !isTeacher()){
       bgSync();
