@@ -128,7 +128,7 @@ body{font-family:"Noto Sans KR",sans-serif;background:var(--bg);color:var(--tx);
 .vt.flip .vt-ru{color:var(--grn)}
 .vt-kr{font-weight:700;color:var(--grn)}
 .vt-ctx{font-size:0.8em;color:var(--tx3);margin-top:2px}
-.vt-ru{display:block;font-size:0.85em;color:var(--tx3);line-height:1.4;margin-top:4px}
+.vt-ru{display:block;font-size:0.85em;color:var(--tx3);line-height:1.4;margin-top:4px;word-break:break-word}
 
 /* ── EXERCISES ── */
 .prog-bar{height:4px;background:var(--bdrl);border-radius:99px;margin-bottom:14px;overflow:hidden}
@@ -1688,7 +1688,9 @@ function renderRevDay(day){
         const ctx=en?(w.ctx_en||w.ctx||""):w.ctx||"";
         const isFlipped=S.vFlipped.has(w.kr);
         html+=`<div class="vt ${isFlipped?"flipped":""}" onclick="flipCard('${w.kr.replace(/'/g,"\'")}')">
-          ${isFlipped?`<div class="vt-ru">${meaning}</div>${ctx?`<div class="vt-ctx">${ctx}</div>`:""}`:`<div class="vt-kr">${w.kr}</div>`}
+          <div class="vt-kr" style="${isFlipped?'font-size:0.75em;opacity:.55':''}">${w.kr}</div>
+          <div class="vt-ru">${meaning}</div>
+          ${ctx?`<div class="vt-ctx">${ctx}</div>`:''}
           <button class="spk-btn" onclick="event.stopPropagation();speak('${w.kr.replace(/'/g,"\'")}')">🔊</button>
         </div>`;
       });
