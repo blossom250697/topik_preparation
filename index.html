@@ -454,7 +454,7 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 <nav class="sidebar" id="sidebar">
   <div class="logo">
     <div class="logo-main">TOPIK II <span class="logo-badge">β</span></div>
-    <div class="logo-sub">Подготовка 45 дней</div>
+    <div class="logo-sub">Подготовка к TOPIK</div>
     <div class="logo-exam">📅 Экзамен: 5 июля 2026</div>
     <div class="logo-bar"><div class="logo-bar-fill" id="sb-prog" style="width:0%"></div></div>
   </div>
@@ -632,9 +632,37 @@ function freshLessonState(order){
     exIndex:0,           // index inside examples step
     showTranslation:true,
     practiceProgress:{correct:0,total:0},
-    miniTestResult:null, // {score,total,weakWords:[],weakGrammar:[]}
-    finalTestResult:null // {score,total,pct,mistakes:[]}
+    miniTestResult:null, // {score,total,pct,weakWords:[],weakGrammar:[]}
+    finalTestResult:null,// {score,total,pct}
+    attempts:{practice:0,miniTest:0,lessonTest:0},
+    timeSpentSec:0,
+    stepStartedAt:null
   };
+}
+// Strip transient/runtime-only fields (the live exercise runner) before sending to the server
+function serializeLessonState(ls){
+  return {
+    lessonId:ls.lessonId, activeStep:ls.activeStep, completedSteps:[...ls.completedSteps],
+    grammarIndex:ls.grammarIndex, practiceProgress:ls.practiceProgress,
+    miniTestResult:ls.miniTestResult, finalTestResult:ls.finalTestResult,
+    attempts:ls.attempts||{practice:0,miniTest:0,lessonTest:0}, timeSpentSec:ls.timeSpentSec||0
+  };
+}
+function restoreLessonState(order, saved){
+  if(!saved){ const fresh=freshLessonState(order); fresh.stepStartedAt=Date.now(); return fresh; }
+  const base=freshLessonState(order);
+  return {...base, ...saved, completedSteps:new Set(saved.completedSteps||[]), stepStartedAt:Date.now()};
+}
+// Persist the active lesson's step-level progress (step reached, attempts, weak spots, time)
+// both locally and to the server, so a teacher can see exactly where a student stopped.
+function persistLessonProgress(){
+  if(!S.lesson) return;
+  if(!S.lessonProgress) S.lessonProgress={};
+  const snap=serializeLessonState(S.lesson);
+  snap.updatedAt=new Date().toISOString();
+  S.lessonProgress[S.currentLesson]=snap;
+  localStorage.setItem('t45-lesson-progress', JSON.stringify(S.lessonProgress));
+  save(); queueSave();
 }
 
 // ── STATE ──
@@ -659,6 +687,7 @@ let S={
   totalStudyTime:0, // minutes
   sessionStart:null, // timestamp when current session started
   lesson:null, // active lessonState object (see freshLessonState)
+  lessonProgress:{}, // {lessonOrder: serialized lesson step-progress} — synced to server
 };
 function save(){
   localStorage.setItem("t45-done",JSON.stringify([...S.done]));
@@ -838,6 +867,8 @@ async function loadFromFirebase(){
     localStorage.setItem('t45-srs',JSON.stringify(S.srs));
     if(data.mistake_log?.length) S.mistakeLog=data.mistake_log;
     if(data.notes) S.notes={...data.notes,...(S.notes||{})};
+    if(data.lesson_progress) S.lessonProgress={...data.lesson_progress,...(S.lessonProgress||{})};
+    localStorage.setItem('t45-lesson-progress', JSON.stringify(S.lessonProgress||{}));
     S.streak=computeStreak();
     setSyncStatus('ok');
   }catch(e){
@@ -849,10 +880,11 @@ async function loadFromFirebase(){
 
 async function saveToFirebase(){
   if(isTeacher()){ setSyncStatus("ok"); return; }
-  const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}, srs:S.srs||{}};
+  const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}, srs:S.srs||{}, lessonProgress:S.lessonProgress||{}};
   localStorage.setItem('t45-srs',JSON.stringify(S.srs||{}));
   localStorage.setItem('t45-done', JSON.stringify([...S.done]));
   localStorage.setItem('t45-mistakes', JSON.stringify(S.mistakes));
+  localStorage.setItem('t45-lesson-progress', JSON.stringify(S.lessonProgress||{}));
   localStorage.setItem('t45-data', JSON.stringify(data));
   setSyncStatus('syncing');
   for(let attempt=0; attempt<3; attempt++){
@@ -861,7 +893,8 @@ async function saveToFirebase(){
         done:[...S.done], mistakes:S.mistakes,
         day_log:S.dayLog||{}, exam_info:S.examInfo||null, srs:S.srs||{},
         mistake_log:(S.mistakeLog||[]).slice(-200), notes:S.notes||{},
-        completed_lessons:[...(S.completedLessons||new Set())], current_lesson:S.currentLesson||1
+        completed_lessons:[...(S.completedLessons||new Set())], current_lesson:S.currentLesson||1,
+        lesson_progress:S.lessonProgress||{}
       });
       setSyncStatus('ok');
       return;
@@ -1110,7 +1143,48 @@ function renderTeacherDash(allStudents, eResults, allRaw, teacherUid){
   document.getElementById('content').innerHTML=html;
 }
 
+// Teacher view: where is this student inside their current lesson, and how did it go.
+function renderStudentLessonProgress(d, en){
+  const lp=d.lesson_progress||{};
+  const entries=Object.entries(lp);
+  if(!entries.length) return '';
+  entries.sort((a,b)=>new Date(b[1].updatedAt||0)-new Date(a[1].updatedAt||0));
+  const [orderStr, snap]=entries[0];
+  const order=parseInt(orderStr);
+  const lesson=(typeof LESSONS!=='undefined'?LESSONS:LESSONS_DEFAULT).find(l=>l.order===order);
+  const title=lesson?(lesson.topic||lesson.title):(`${en?'Lesson':'Урок'} ${order}`);
+  const stepDone=new Set(snap.completedSteps||[]);
+  const mins=Math.round((snap.timeSpentSec||0)/60);
+  let html=`<details open style="margin-bottom:10px">
+    <summary style="font-weight:600;font-size:13px;cursor:pointer;padding:6px 0">📍 ${en?'Current lesson progress':'Прогресс по текущему уроку'}</summary>
+    <div style="margin-top:8px;padding:10px 12px;background:var(--sur2);border-radius:var(--r)">
+      <div style="font-weight:700;margin-bottom:6px">${en?'Lesson':'Урок'} ${order}: ${title}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">`;
+  LESSON_STEPS.forEach(s=>{
+    const isDone=stepDone.has(s);
+    const isActive=snap.activeStep===s;
+    const bg=isDone?'var(--grnl)':isActive?'var(--gldl)':'var(--sur)';
+    const col=isDone?'var(--grn)':isActive?'var(--gld)':'var(--tx3)';
+    html+=`<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;background:${bg};color:${col}">${isDone?'✓':isActive?'●':'○'} ${LESSON_STEP_LABEL[en?'en':'ru'][s]}</span>`;
+  });
+  html+=`</div>
+      <div style="font-size:12px;color:var(--tx2);line-height:1.9">
+        <div>⏱ ${en?'Time spent':'Время'}: ${mins} ${en?'min':'мин'}</div>
+        <div>🔁 ${en?'Attempts':'Попытки'}: ${en?'practice':'практика'} ${snap.attempts?.practice||0} · ${en?'mini-test':'мини-тест'} ${snap.attempts?.miniTest||0} · ${en?'lesson test':'тест урока'} ${snap.attempts?.lessonTest||0}</div>`;
+  if(snap.miniTestResult){
+    const mt=snap.miniTestResult;
+    html+=`<div>🔎 ${en?'Mini-test':'Мини-тест'}: ${mt.score}/${mt.total} (${mt.pct}%)${mt.weakGrammar?.length?` · ${en?'weak':'слабо'}: ${mt.weakGrammar.join(', ')}`:''}</div>`;
+  }
+  if(snap.finalTestResult){
+    const ft=snap.finalTestResult;
+    html+=`<div>🏁 ${en?'Lesson test':'Тест урока'}: ${ft.score}/${ft.total} (${ft.pct}%)</div>`;
+  }
+  html+=`</div></div></details>`;
+  return html;
+}
+
 function renderStudentCard(uid, d, eResults){
+  const en=isJosh();
   const done=(d.done||[]);
   const doneSet=new Set(done);
   const doneCount=done.length;
@@ -1182,6 +1256,8 @@ function renderStudentCard(uid, d, eResults){
     <!-- ALERTS -->
     ${daysSinceLast!=null&&daysSinceLast>3?`<div style="background:var(--redl);color:var(--red);padding:8px 12px;border-radius:8px;font-size:0.85em;margin-bottom:10px">⚠️ Не занимается ${daysSinceLast} дней</div>`:''}
     ${poorDays.length?`<div style="background:var(--gldl);padding:8px 12px;border-radius:8px;font-size:0.85em;margin-bottom:10px">📉 Плохой результат в днях: ${poorDays.join(', ')}</div>`:''}
+
+    ${renderStudentLessonProgress(d, en)}
 
     <!-- PROGRESS SECTION (collapsible) -->
     <details style="margin-bottom:10px">
@@ -2946,7 +3022,8 @@ function openLesson(order){
   S.currentLesson=order;
   S.gIdx=0; S.vFlipped=new Set();
   S.exPhase="start"; S.composed=[]; S.selOpt=null;
-  S.lesson=freshLessonState(order);
+  const saved=(S.lessonProgress||{})[order];
+  S.lesson=restoreLessonState(order, saved);
   const lesson=getLesson(order);
   document.getElementById("btn-home").style.display="inline-flex";
   document.getElementById("tb-title").textContent=(lesson.section==='듣기'?'🎧':'📖')+" "+lesson.title;
@@ -3029,9 +3106,17 @@ function renderLessonStepper(lesson,en){
 function goToLessonStep(step){
   if(step!==S.lesson.activeStep && !S.lesson.completedSteps.has(step) && !isStepAvailable(step)) return;
   S.lesson.activeStep=step;
+  S.lesson.stepStartedAt=Date.now();
   renderLessonPage(); window.scrollTo(0,0);
 }
-function completeLessonStep(stepId){ S.lesson.completedSteps.add(stepId); }
+function completeLessonStep(stepId){
+  if(S.lesson.stepStartedAt){
+    S.lesson.timeSpentSec+=Math.round((Date.now()-S.lesson.stepStartedAt)/1000);
+    S.lesson.stepStartedAt=Date.now();
+  }
+  S.lesson.completedSteps.add(stepId);
+  persistLessonProgress();
+}
 function goToNextLessonStep(){
   completeLessonStep(S.lesson.activeStep);
   const idx=LESSON_STEPS.indexOf(S.lesson.activeStep);
@@ -3132,6 +3217,8 @@ function startLessonRunner(kind){
   const lesson=getLesson(S.currentLesson);
   const _gdb=getGDB();
   const forms=getLessonKnownGrammar(lesson);
+  if(!S.lesson.attempts) S.lesson.attempts={practice:0,miniTest:0,lessonTest:0};
+  S.lesson.attempts[kind]=(S.lesson.attempts[kind]||0)+1;
   let queue=[];
   if(kind==='practice'){
     forms.forEach(form=>{
@@ -3247,7 +3334,6 @@ function finishLessonRunner(st){
     completeLessonStep('miniTest');
   }
   S.lesson.runner=null;
-  save(); queueSave();
   renderLessonPage(); window.scrollTo(0,0);
 }
 
@@ -3958,6 +4044,10 @@ function startEx(){
     const lesson=getLesson(S.currentLesson);
     gForms=getLessonKnownGrammar(lesson);
     vocab=lesson.vocab||[];
+    if(S.lesson){
+      if(!S.lesson.attempts) S.lesson.attempts={practice:0,miniTest:0,lessonTest:0};
+      S.lesson.attempts.lessonTest=(S.lesson.attempts.lessonTest||0)+1;
+    }
   } else {
     const blocks=PLAN.day_to_block[S.day]||[];
     gForms=blocks.flatMap(b=>GB[b]||[]);
@@ -4631,6 +4721,7 @@ function boot(){
       try{S.mistakeLog=JSON.parse(localStorage.getItem('t45-mistakelog')||'[]')}catch(e){S.mistakeLog=[]}
       try{S.notes=JSON.parse(localStorage.getItem('t45-notes')||'{}')}catch(e){S.notes={}}
       try{S.completedLessons=new Set(JSON.parse(localStorage.getItem('t45-completed-lessons')||'[]'))}catch(e){S.completedLessons=new Set()}
+      try{S.lessonProgress=JSON.parse(localStorage.getItem('t45-lesson-progress')||'{}')}catch(e){S.lessonProgress={}}
       S.currentLesson=parseInt(localStorage.getItem('t45-current-lesson')||'1')||1;
       S.streak=computeStreak();
       migrateOldProgress();
