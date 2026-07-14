@@ -380,6 +380,9 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 .lesson-hdr-title{font-size:calc(var(--fs) + 5px);font-weight:700;line-height:1.3;margin-bottom:3px}
 .lesson-hdr-sub{color:var(--tx2);font-size:calc(var(--fs) - 1px);margin-bottom:10px}
 .lesson-hdr-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tx3)}
+.lesson-qta-strip{margin-top:12px;padding:10px 12px;background:var(--purl);border-radius:var(--r);display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
+.lesson-qta-strip-type{font-size:12px;font-weight:700;color:var(--pur)}
+.lesson-qta-strip-skill{font-size:11px;color:var(--tx2);margin-top:2px}
 
 /* stepper */
 .stepper{background:var(--sur);border:1px solid var(--bdrl);border-radius:var(--rl);padding:10px 12px 12px;margin-bottom:14px}
@@ -438,6 +441,24 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 .side-step-locked{color:var(--tx3)}
 .side-tip{background:var(--gldl);border:1px solid #D4B56A;border-radius:var(--r);padding:9px 11px;font-size:12px;line-height:1.55;color:#6b5000}
 .side-next-btn{margin-top:14px}
+
+/* ══════════ QUESTION TYPE ANALYSIS (유형분석) ══════════ */
+.qta-sec{background:var(--sur);border:1px solid var(--bdrl);border-radius:var(--rl);margin-bottom:10px;overflow:hidden}
+.qta-sec-hdr{padding:12px 16px;font-weight:700;font-size:0.92em;cursor:pointer;list-style:none;user-select:none}
+.qta-sec-hdr::-webkit-details-marker{display:none}
+.qta-sec-body{padding:0 16px 14px}
+.qta-chip{display:inline-block;padding:4px 11px;border-radius:99px;background:var(--sur2);color:var(--tx2);font-size:12px;font-weight:600}
+.qta-list-item{padding:6px 0;border-bottom:1px solid var(--bdrl);font-size:0.9em;line-height:1.5}
+.qta-list-item:last-child{border-bottom:none}
+.qta-check{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);background:var(--sur2);cursor:pointer;font-size:0.88em;transition:.15s}
+.qta-check.checked{background:var(--grnl);color:var(--grn);font-weight:600}
+.qta-check-box{width:18px;height:18px;border-radius:5px;border:2px solid var(--bdr);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--sur)}
+.qta-check.checked .qta-check-box{background:var(--grn);border-color:var(--grn);color:#fff}
+.qta-hub-row{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--bdrl);cursor:pointer}
+.qta-hub-row:last-child{border-bottom:none}
+.qta-hub-row:hover{background:var(--sur2)}
+.qta-mini-q{margin-bottom:16px}
+.qta-mini-q:last-child{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -461,6 +482,7 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
   <div class="nav" id="sb-nav"></div>
   <div class="sb-special">
     <button class="sb-btn" id="sb-progress-btn" onclick="openMyProgress();closeSidebar()">📊 Мой прогресс</button>
+    <button class="sb-btn" id="sb-qta-btn" onclick="openQTAHub();closeSidebar()">🎯 Анализ типов заданий</button>
     <button class="sb-btn" id="sb-schedule-btn" onclick="openSchedule();closeSidebar()">📅 Расписание TOPIK 2026</button>
     <button class="sb-btn" id="sb-exam-btn" onclick="openExam();closeSidebar()">📝 Тренировочный тест (102회)</button>
     <button class="sb-btn" id="sb-teacher-btn" onclick="openTeacher();closeSidebar()">👩‍🏫 Кабинет учителя</button>
@@ -689,6 +711,8 @@ let S={
   sessionStart:null, // timestamp when current session started
   lesson:null, // active lessonState object (see freshLessonState)
   lessonProgress:{}, // {lessonOrder: serialized lesson step-progress} — synced to server
+  qtaProgress:{}, // {qtaId: {viewed, checklist, miniPractice, mastery}} — synced to server
+  qtaId:null, qtaMini:null,
 };
 function save(){
   localStorage.setItem("t45-done",JSON.stringify([...S.done]));
@@ -916,6 +940,8 @@ async function loadFromFirebase(){
     if(data.notes) S.notes={...data.notes,...(S.notes||{})};
     if(data.lesson_progress) S.lessonProgress={...data.lesson_progress,...(S.lessonProgress||{})};
     localStorage.setItem('t45-lesson-progress', JSON.stringify(S.lessonProgress||{}));
+    if(data.qta_progress) S.qtaProgress={...data.qta_progress,...(S.qtaProgress||{})};
+    localStorage.setItem('t45-qta-progress', JSON.stringify(S.qtaProgress||{}));
     S.streak=computeStreak();
     setSyncStatus('ok');
   }catch(e){
@@ -927,11 +953,12 @@ async function loadFromFirebase(){
 
 async function saveToFirebase(){
   if(isTeacher()){ setSyncStatus("ok"); return; }
-  const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}, srs:S.srs||{}, lessonProgress:S.lessonProgress||{}};
+  const data = {done:[...S.done], mistakes:S.mistakes, examInfo:S.examInfo||null, dayLog:S.dayLog||{}, srs:S.srs||{}, lessonProgress:S.lessonProgress||{}, qtaProgress:S.qtaProgress||{}};
   localStorage.setItem('t45-srs',JSON.stringify(S.srs||{}));
   localStorage.setItem('t45-done', JSON.stringify([...S.done]));
   localStorage.setItem('t45-mistakes', JSON.stringify(S.mistakes));
   localStorage.setItem('t45-lesson-progress', JSON.stringify(S.lessonProgress||{}));
+  localStorage.setItem('t45-qta-progress', JSON.stringify(S.qtaProgress||{}));
   localStorage.setItem('t45-data', JSON.stringify(data));
   setSyncStatus('syncing');
   for(let attempt=0; attempt<3; attempt++){
@@ -941,7 +968,7 @@ async function saveToFirebase(){
         day_log:S.dayLog||{}, exam_info:S.examInfo||null, srs:S.srs||{},
         mistake_log:(S.mistakeLog||[]).slice(-200), notes:S.notes||{},
         completed_lessons:[...(S.completedLessons||new Set())], current_lesson:S.currentLesson||1,
-        lesson_progress:S.lessonProgress||{}
+        lesson_progress:S.lessonProgress||{}, qta_progress:S.qtaProgress||{}
       });
       setSyncStatus('ok');
       return;
@@ -1230,6 +1257,36 @@ function renderStudentLessonProgress(d, en){
   return html;
 }
 
+// Teacher view: which question-type strategies is this student weak in, and what to train next.
+function renderStudentQTAErrors(d, en){
+  const qp=d.qta_progress||{};
+  const weak=Object.entries(qp).filter(([,v])=>v.miniPractice && v.miniPractice.pct<70);
+  const notStarted=QTA_ORDER.filter(id=>!qp[id] || !qp[id].viewed);
+  if(!weak.length && notStarted.length===QTA_ORDER.length) return '';
+  let html=`<details style="margin-bottom:10px">
+    <summary style="font-weight:600;font-size:13px;cursor:pointer;padding:6px 0">🎯 ${en?'Question-type strategy errors':'Ошибки по экзаменационным стратегиям'}</summary>
+    <div style="margin-top:8px">`;
+  if(weak.length){
+    weak.sort((a,b)=>a[1].miniPractice.pct-b[1].miniPractice.pct);
+    weak.forEach(([id,v])=>{
+      const q=QUESTION_TYPE_ANALYSIS[id]; if(!q) return;
+      html+=`<div style="padding:8px 0;border-bottom:1px solid var(--bdrl)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="font-weight:700;font-size:0.88em">${q.questionRange} · ${q.title[en?'en':'ru']}</div>
+          <span style="color:var(--red);font-weight:700;font-size:0.85em">${v.miniPractice.score}/${v.miniPractice.total}</span>
+        </div>
+        <div style="font-size:0.78em;color:var(--gld);margin-top:4px">⚠️ ${(q.commonMistakes||[]).slice(0,2).map(m=>m[en?'en':'ru']).join('; ')}</div>
+        <div style="font-size:0.78em;color:var(--tx3);margin-top:2px">💡 ${en?'Recommended':'Рекомендуется'}: ${en?'redo the mini-practice for this type':'повторить мини-тренировку по этому типу'} — ${q.title[en?'en':'ru']}</div>
+      </div>`;
+    });
+  }
+  if(notStarted.length){
+    html+=`<div style="font-size:0.8em;color:var(--tx3);margin-top:8px">${en?'Not started yet':'Ещё не начаты'}: ${notStarted.length}/${QTA_ORDER.length}</div>`;
+  }
+  html+=`</div></details>`;
+  return html;
+}
+
 function renderStudentCard(uid, d, eResults){
   const en=isJosh();
   const done=(d.done||[]);
@@ -1305,6 +1362,7 @@ function renderStudentCard(uid, d, eResults){
     ${poorDays.length?`<div style="background:var(--gldl);padding:8px 12px;border-radius:8px;font-size:0.85em;margin-bottom:10px">📉 Плохой результат в днях: ${poorDays.join(', ')}</div>`:''}
 
     ${renderStudentLessonProgress(d, en)}
+    ${renderStudentQTAErrors(d, en)}
 
     <!-- PROGRESS SECTION (collapsible) -->
     <details style="margin-bottom:10px">
@@ -2693,6 +2751,23 @@ function renderProgressStats(st,en){
 }
 
 // ── Слабые места ──
+function renderQTAMasterySummary(en){
+  let html=`<div class="card" style="margin-bottom:12px">
+    <div class="card-hdr">🎯 ${en?'Question type mastery':'Освоение типов заданий'}</div>`;
+  QTA_ORDER.forEach(id=>{
+    const q=QUESTION_TYPE_ANALYSIS[id]; if(!q) return;
+    const e=getQTAProgress(id);
+    const mastery=computeQTAMastery(e);
+    html+=`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--bdrl);cursor:pointer" onclick="openQTA('${id}')">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:0.88em">${q.questionRange} · ${q.title[en?'en':'ru']}</div>
+      </div>
+      <span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;background:${QTA_MASTERY_COLOR[mastery]};flex-shrink:0">${QTA_MASTERY_LABEL[en?'en':'ru'][mastery]}</span>
+    </div>`;
+  });
+  html+=`</div>`;
+  return html;
+}
 function renderProgressWeak(st,en){
   let html='';
 
@@ -2740,6 +2815,9 @@ function renderProgressWeak(st,en){
     html+=`<button class="btn btn-p btn-full" style="margin-top:12px" onclick="startWeakPractice('grammar')">${en?'Practice weak grammar':'Тренировать грамматику'} →</button>
     </div>`;
   }
+
+  // Question type mastery
+  html+=renderQTAMasterySummary(en);
 
   if(!st.weakWords.length && !st.weakGrammar.length){
     html+=`<div style="text-align:center;padding:40px;color:var(--tx3)">
@@ -2970,6 +3048,1309 @@ function migrateFromDays(){
 // ── КОНЕЦ СИСТЕМЫ УРОКОВ ──
 // ══════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════
+// ── QUESTION TYPE ANALYSIS (유형분석) ──
+// One methodological breakdown per TOPIK II question-type range.
+// Shown BEFORE the grammar/vocab lessons of that range, and linked
+// back to from every lesson header ("Повторить стратегию").
+// ══════════════════════════════════════════════════
+const QUESTION_TYPE_ANALYSIS = {
+
+"listening_1_3": {
+  id:"listening_1_3", section:"listening", questionRange:"1–3",
+  title:{ru:"Выбрать подходящую картинку или график", en:"Choose the Matching Picture or Graph", ko:"그림·그래프 고르기"},
+  objective:{ru:"Проверяется способность точно уловить на слух конкретную ситуацию, действие или числовые данные и сопоставить их с одним из четырёх изображений.",
+    en:"Tests whether you can pick out a concrete situation, action, or set of numbers from a short listening and match it to one of four images."},
+  taskDescription:{ru:"Прослушайте короткую фразу, диалог или объявление и выберите картинку (№1–2) или график (№3), которая точно соответствует услышанному.",
+    en:"Listen to a short phrase, dialogue, or announcement and choose the picture (Q1–2) or graph (Q3) that exactly matches what you heard."},
+  focusPoint:{ru:"Кто, что делает, где находится и какие предметы упомянуты. В графике (№3) — направление изменения показателя и порядок величин.",
+    en:"Who is doing what, where, and which objects are mentioned. For the graph (Q3) — the direction of change and the order of the values."},
+  focusNote:{ru:"Разница между картинками часто в одной детали — позе человека, месте действия или порядке предметов. Разница между графиками — в направлении линии, а не в самих цифрах.",
+    en:"Pictures usually differ by one small detail — a pose, a location, or the order of objects. Graphs usually differ by the direction of the trend, not the numbers themselves."},
+  commonContexts:[{ru:"дом",en:"home"},{ru:"магазин",en:"store"},{ru:"улица",en:"street"},{ru:"парк",en:"park"},{ru:"офис",en:"office"},{ru:"общественное место",en:"public place"}],
+  relationshipTypes:[],
+  speechFunctions:[{ko:"묘사",ru:"описание действия",en:"describing an action"},{ko:"안내",ru:"объявление",en:"announcement"},{ko:"통계 보고",ru:"отчёт о статистике",en:"reporting statistics"}],
+  signalWords:[
+    {kr:"-고 있다",ru:"действие происходит сейчас",en:"action in progress",function:{ru:"указывает на текущее действие",en:"marks an ongoing action"},example:{kr:"아이가 책을 읽고 있어요.",ru:"Ребёнок читает книгу (сейчас).",en:"The child is reading a book (right now)."}},
+    {kr:"-아/어 있다",ru:"результат, состояние после действия",en:"resulting state",function:{ru:"указывает на завершённое состояние",en:"marks a completed state"},example:{kr:"문이 열려 있어요.",ru:"Дверь открыта.",en:"The door is (left) open."}},
+    {kr:"증가하다/늘다",ru:"расти, увеличиваться",en:"to increase",function:{ru:"направление графика вверх",en:"graph trending up"},example:{kr:"판매량이 증가했어요.",ru:"Продажи выросли.",en:"Sales increased."}},
+    {kr:"감소하다/줄다",ru:"падать, уменьшаться",en:"to decrease",function:{ru:"направление графика вниз",en:"graph trending down"},example:{kr:"이용객이 줄었어요.",ru:"Число посетителей сократилось.",en:"The number of visitors decreased."}}
+  ],
+  traps:[
+    {ru:"картинка похожа, но отличается одной деталью (поза, направление взгляда, наличие предмета)",en:"the picture looks similar but differs in one detail (pose, gaze direction, an extra/missing object)"},
+    {ru:"картинка показывает момент «до» или «после» действия, а не сам процесс",en:"the picture shows the moment before or after the action instead of the action itself"},
+    {ru:"график показывает противоположную тенденцию (рост вместо падения)",en:"the graph shows the opposite trend (rising instead of falling)"},
+    {ru:"график верен по направлению, но неверен порядок величин между категориями",en:"the graph trend is right but the ranking between categories is wrong"}
+  ],
+  solvingStrategy:[
+    {ru:"Бегло просмотрите все 4 картинки/графика ДО начала аудио и отметьте, чем они отличаются.",en:"Glance at all 4 images before the audio starts and note what makes them different."},
+    {ru:"Слушайте один раз целиком, не выбирая ответ сразу.",en:"Listen through once without rushing to answer."},
+    {ru:"Для картинок — сосредоточьтесь на глаголе действия и месте.",en:"For pictures — focus on the action verb and the location."},
+    {ru:"Для графика — сосредоточьтесь на глаголах изменения (증가/감소/유지) и порядке величин.",en:"For the graph — focus on the change verbs (increase/decrease/stay the same) and the ranking of values."},
+    {ru:"Исключите варианты, которые противоречат хотя бы одной услышанной детали.",en:"Eliminate any option that contradicts even one detail you heard."}
+  ],
+  commonMistakes:[
+    {ru:"выбирают картинку по одному знакомому слову, не проверив остальные детали",en:"picking a picture based on one familiar word without checking the rest of the details"},
+    {ru:"не замечают, что график показывает противоположное направление",en:"missing that the graph shows the opposite direction"},
+    {ru:"путают момент «до действия» и «после действия»",en:"confusing the moment before the action with the moment after it"}
+  ],
+  checklist:[
+    {ru:"Я просмотрел(а) картинки заранее и увидел(а) отличия",en:"I previewed the pictures and noticed the differences"},
+    {ru:"Я понял(а), кто и что делает",en:"I understood who is doing what"},
+    {ru:"Для графика — я понял(а), растёт или падает показатель",en:"For the graph — I understood whether it's rising or falling"},
+    {ru:"Я исключил(а) варианты с явными противоречиями",en:"I eliminated the options that clearly contradict what I heard"}
+  ],
+  exampleQuestion:{
+    situation:{ru:"Объявление в супермаркете",en:"An announcement in a supermarket"},
+    text:{kr:"고객 여러분께 안내 말씀 드립니다. 지금부터 30분 동안 과일 코너에서 세일을 진행합니다.",
+      ru:"Уважаемые покупатели, сообщаем вам. С этого момента в течение 30 минут в отделе фруктов проходит распродажа.",
+      en:"Attention shoppers. Starting now, for the next 30 minutes, there is a sale in the fruit section."},
+    options:[
+      {ru:"Люди стоят в очереди на кассе",en:"People are standing in line at the checkout"},
+      {ru:"Покупатели выбирают фрукты у прилавка со скидкой",en:"Shoppers are picking fruit at a discounted stand"},
+      {ru:"Продавец раскладывает овощи на полке",en:"A clerk is arranging vegetables on a shelf"},
+      {ru:"Покупатель возвращает товар на кассе",en:"A customer is returning an item at the checkout"}
+    ],
+    correctIndex:1,
+    explanation:{ru:"В объявлении прямо сказано про распродажу именно во фруктовом отделе — этому соответствует только картинка с покупателями у прилавка со скидкой на фрукты.",
+      en:"The announcement specifically mentions a sale in the fruit section — only the option with shoppers at a discounted fruit stand matches that."},
+    whyOthersWrong:{ru:"Остальные варианты про очередь, овощи и возврат товара не связаны с объявлением о скидке на фрукты — в тексте нет ни слова об этом.",
+      en:"The other options — a checkout line, vegetables, or a return — have nothing to do with a fruit-section sale announcement."},
+    strategyUsed:{ru:"Сосредоточение на ключевом слове места (과일 코너) и действии (세일 진행) сразу отсекло 3 неверных варианта.",
+      en:"Focusing on the key location word (fruit section) and the action (a sale is running) eliminated 3 wrong options immediately."}
+  },
+  miniPractice:[
+    {q:{ru:"Где происходит разговор: «어서 오세요. 오늘 저녁 메뉴는 뭘로 하시겠어요?»",en:"Where does this take place: \"Welcome. What would you like from tonight's menu?\""},
+      opts:[{ru:"В ресторане",en:"At a restaurant",correct:true},{ru:"В библиотеке",en:"At a library",correct:false},{ru:"На почте",en:"At a post office",correct:false}]},
+    {q:{ru:"Какое действие описано: «지금 그림을 그리고 있어요»?",en:"What action is described: \"(Someone) is drawing a picture right now\"?"},
+      opts:[{ru:"Действие уже завершено",en:"The action is already finished",correct:false},{ru:"Действие происходит сейчас",en:"The action is happening now",correct:true},{ru:"Действие ещё не началось",en:"The action hasn't started yet",correct:false}]},
+    {q:{ru:"Куда направлен график, если сказано «인구가 계속 감소했습니다»?",en:"Which way does the graph point if it says \"the population kept decreasing\"?"},
+      opts:[{ru:"Вверх",en:"Up",correct:false},{ru:"Вниз",en:"Down",correct:true},{ru:"Без изменений",en:"Flat / unchanged",correct:false}]}
+  ],
+  recommendedVocabulary:["증가하다","감소하다","진행하다","안내"],
+  recommendedGrammar:["A/V-거든요"]
+},
+
+"listening_4_8": {
+  id:"listening_4_8", section:"listening", questionRange:"4–8",
+  title:{ru:"Выбрать подходящее продолжение диалога", en:"Choose the Most Appropriate Continuation", ko:"이어질 수 있는 말 고르기"},
+  objective:{ru:"Проверяется понимание общего хода разговора, намерения говорящего, отношений между участниками и способность предсказать естественную следующую реплику.",
+    en:"Tests understanding of the flow of a conversation, the speaker's intent, the relationship between participants, and the ability to predict a natural next line."},
+  taskDescription:{ru:"Прослушайте короткий диалог и выберите реплику, которая наиболее естественно продолжает разговор.",
+    en:"Listen to a short dialogue and choose the line that most naturally continues the conversation."},
+  focusPoint:{ru:"Внимательно слушайте последнюю реплику собеседника, но учитывайте весь диалог: место разговора, отношения участников, речевую функцию последней реплики.",
+    en:"Listen closely to the last line, but take the whole dialogue into account: the setting, the relationship, and the speech function of that last line."},
+  focusNote:{ru:"Для вопросов 4–8 особенно важна последняя реплика перед пропуском, но правильный ответ часто зависит от контекста всего разговора.",
+    en:"The last line before the gap matters most for Q4–8, but the correct answer often depends on the context of the entire dialogue."},
+  commonContexts:[{ru:"дом",en:"home"},{ru:"школа",en:"school"},{ru:"университет",en:"university"},{ru:"офис",en:"office"},{ru:"ресторан",en:"restaurant"},{ru:"магазин",en:"store"},{ru:"больница",en:"hospital"},{ru:"банк",en:"bank"},{ru:"транспорт",en:"transportation"},{ru:"телефонный разговор",en:"phone call"}],
+  relationshipTypes:[{ru:"друзья",en:"friends"},{ru:"коллеги",en:"colleagues"},{ru:"преподаватель и ученик",en:"teacher and student"},{ru:"начальник и сотрудник",en:"boss and employee"},{ru:"клиент и работник",en:"customer and staff"},{ru:"продавец и покупатель",en:"seller and buyer"},{ru:"незнакомые люди",en:"strangers"}],
+  speechFunctions:[
+    {ko:"문의",ru:"запрос информации",en:"asking for information"},{ko:"부탁",ru:"просьба",en:"request for a favor"},
+    {ko:"제안",ru:"предложение",en:"suggestion"},{ko:"거절",ru:"отказ",en:"refusal"},
+    {ko:"동의",ru:"согласие",en:"agreement"},{ko:"확인",ru:"уточнение",en:"confirming"},{ko:"추천",ru:"рекомендация",en:"recommendation"}
+  ],
+  signalWords:[
+    {kr:"혹시",ru:"случайно, не...ли",en:"by any chance",function:{ru:"мягкий вопрос/просьба",en:"softens a question or request"},example:{kr:"혹시 시간 있으세요?",ru:"У вас случайно есть время?",en:"Do you happen to have time?"}},
+    {kr:"그러면/그럼",ru:"тогда, в таком случае",en:"in that case",function:{ru:"вывод или предложение на основе сказанного",en:"draws a conclusion or makes a suggestion"},example:{kr:"그럼 내일 만날까요?",ru:"Тогда встретимся завтра?",en:"Shall we meet tomorrow then?"}},
+    {kr:"죄송하지만",ru:"извините, но",en:"I'm sorry, but",function:{ru:"вежливый отказ или просьба",en:"softens a refusal or request"},example:{kr:"죄송하지만 지금은 안 돼요.",ru:"Извините, но сейчас не получится.",en:"I'm sorry, but it's not possible right now."}},
+    {kr:"-(으)ㄹ까요?",ru:"давайте... / не...ли нам",en:"shall we...?",function:{ru:"предложение",en:"making a suggestion"},example:{kr:"같이 갈까요?",ru:"Пойдём вместе?",en:"Shall we go together?"}},
+    {kr:"-는 게 어때요?",ru:"как насчёт того, чтобы...",en:"how about ...ing",function:{ru:"мягкое предложение/совет",en:"a gentle suggestion or advice"},example:{kr:"내일 다시 오는 게 어때요?",ru:"Как насчёт того, чтобы прийти завтра снова?",en:"How about coming back tomorrow?"}}
+  ],
+  traps:[
+    {ru:"вариант содержит знакомое слово из диалога, но не продолжает его логически",en:"the option reuses a familiar word from the dialogue but doesn't logically continue it"},
+    {ru:"вариант отвечает только на отдельное слово, а не на намерение говорящего",en:"the option answers a single word instead of the speaker's actual intent"},
+    {ru:"грамматически правильный ответ не подходит по ситуации",en:"the option is grammatically fine but doesn't fit the situation"},
+    {ru:"нарушен уровень вежливости, не соответствующий отношениям говорящих",en:"the politeness level doesn't match the relationship between the speakers"},
+    {ru:"ответ логичен по теме, но не связан именно с последней репликой",en:"the option is on-topic but doesn't respond to the actual last line"}
+  ],
+  solvingStrategy:[
+    {ru:"Быстро определите место разговора.",en:"Quickly identify where the conversation is happening."},
+    {ru:"Определите отношения между говорящими.",en:"Determine the relationship between the speakers."},
+    {ru:"Поймите общую цель разговора.",en:"Understand the overall purpose of the conversation."},
+    {ru:"Особенно внимательно прослушайте последнюю реплику.",en:"Listen especially closely to the very last line."},
+    {ru:"Определите её функцию: вопрос, просьба, предложение, отказ и т.д.",en:"Identify its function: question, request, suggestion, refusal, etc."},
+    {ru:"Предскажите подходящий ответ своими словами до того, как увидите варианты.",en:"Predict a suitable answer in your own words before looking at the options."},
+    {ru:"Сравните варианты с предполагаемым ответом и уровнем вежливости.",en:"Compare the options against your predicted answer and the required politeness level."}
+  ],
+  commonMistakes:[
+    {ru:"не определяют отношения между говорящими и выбирают неуместно вежливый/фамильярный вариант",en:"skip identifying the relationship and pick a reply that's too formal or too casual"},
+    {ru:"игнорируют последнюю реплику и отвечают на весь диалог в целом",en:"ignore the last line and respond to the dialogue in general instead"},
+    {ru:"выбирают ответ по знакомому слову, а не по смыслу реплики",en:"pick the option with a familiar word instead of the actual meaning"},
+    {ru:"путают просьбу и предложение",en:"confuse a request with a suggestion"}
+  ],
+  checklist:[
+    {ru:"Я понял(а), где происходит разговор",en:"I understood where the conversation takes place"},
+    {ru:"Я понял(а), кто с кем говорит",en:"I understood who is talking to whom"},
+    {ru:"Я понял(а) цель разговора",en:"I understood the purpose of the conversation"},
+    {ru:"Я понял(а) функцию последней реплики",en:"I understood the function of the last line"},
+    {ru:"Я могу предположить ответ своими словами",en:"I can predict the answer in my own words"},
+    {ru:"Выбранный вариант естественно продолжает разговор",en:"My chosen option naturally continues the conversation"},
+    {ru:"Уровень вежливости подходит ситуации",en:"The politeness level fits the situation"}
+  ],
+  exampleQuestion:{
+    situation:{ru:"Разговор коллег в офисе перед встречей",en:"Coworkers talking in the office before a meeting"},
+    dialogue:[
+      {sp:"A",kr:"오늘 회의 자료 다 준비했어요?",ru:"Вы подготовили все материалы для сегодняшней встречи?",en:"Have you prepared all the materials for today's meeting?"},
+      {sp:"B",kr:"네, 거의 다 됐는데 마지막 표만 확인하면 돼요.",ru:"Да, почти всё готово, осталось проверить только последнюю таблицу.",en:"Yes, almost done — I just need to double-check the last table."},
+      {sp:"A",kr:"혹시 도와줄까요? 시간이 얼마 안 남았어요.",ru:"Может, помочь? Времени осталось немного.",en:"Would you like some help? There isn't much time left."}
+    ],
+    options:[
+      {ru:"네, 그럼 표 확인 좀 도와주시겠어요?",en:"Yes, could you help me check the table then?"},
+      {ru:"아니요, 회의는 다음 주예요.",en:"No, the meeting is next week."},
+      {ru:"네, 표는 어제 다 지웠어요.",en:"Yes, I deleted the table yesterday."},
+      {ru:"고마워요, 이미 다 끝냈어요, 회의는 취소됐어요.",en:"Thanks, I already finished, the meeting is cancelled."}
+    ],
+    correctIndex:0,
+    explanation:{ru:"Реплика A — это предложение помощи (혹시 도와줄까요?). Естественный ответ — принять помощь и уточнить, в чём именно она нужна.",
+      en:"A's last line is an offer of help. The natural response is to accept it and specify what kind of help is needed."},
+    whyOthersWrong:{ru:"Варианты про перенос встречи, удаление таблицы или её отмену не связаны с предложением помощи и противоречат более ранним репликам («почти готово», «встреча сегодня»).",
+      en:"The options about postponing the meeting, deleting the table, or cancelling it ignore the offer of help and contradict earlier lines (\"almost done\", \"meeting is today\")."},
+    strategyUsed:{ru:"Определение речевой функции последней реплики (предложение помощи) сразу указало на единственный логичный тип ответа — согласие с уточнением.",
+      en:"Identifying the speech function of the last line (an offer of help) immediately pointed to the only logical type of reply — accepting with a clarification."}
+  },
+  miniPractice:[
+    {q:{ru:"Где происходит разговор: «손님, 이 원피스 한번 입어 보시겠어요?»",en:"Where does this happen: \"Ma'am, would you like to try on this dress?\""},
+      opts:[{ru:"В магазине одежды",en:"At a clothing store",correct:true},{ru:"В банке",en:"At a bank",correct:false},{ru:"В больнице",en:"At a hospital",correct:false}]},
+    {q:{ru:"Какие отношения между говорящими: «교수님, 과제 제출 기한을 연장해 주실 수 있나요?»",en:"What's the relationship here: \"Professor, could you extend the assignment deadline?\""},
+      opts:[{ru:"Преподаватель и студент",en:"Professor and student",correct:true},{ru:"Врач и пациент",en:"Doctor and patient",correct:false},{ru:"Продавец и покупатель",en:"Seller and buyer",correct:false}]},
+    {q:{ru:"Какая функция у реплики: «죄송하지만 오늘은 좀 어려울 것 같아요»?",en:"What's the function of: \"I'm sorry, but today seems difficult\"?"},
+      opts:[{ru:"Согласие",en:"Agreement",correct:false},{ru:"Вежливый отказ",en:"A polite refusal",correct:true},{ru:"Благодарность",en:"Gratitude",correct:false}]}
+  ],
+  recommendedVocabulary:["문의","부탁","제안","거절"],
+  recommendedGrammar:["V-아/어 보니","V-도록 하다"]
+},
+
+"listening_9_12": {
+  id:"listening_9_12", section:"listening", questionRange:"9–12",
+  title:{ru:"Понять объявление или инструкцию", en:"Understand an Announcement or Instruction", ko:"안내·설명 이해하기"},
+  objective:{ru:"Проверяется способность понять действие, которое собеседник намерен совершить дальше, на основе короткого диалога с инструкцией или объяснением процедуры.",
+    en:"Tests whether you can determine what a speaker is about to do next, based on a short dialogue containing an instruction or explanation of a procedure."},
+  taskDescription:{ru:"Прослушайте диалог и выберите, что говорящий сделает после этого разговора (обычно — женщина).",
+    en:"Listen to the dialogue and choose what the speaker (usually the woman) will do right after this conversation."},
+  focusPoint:{ru:"Сосредоточьтесь не на всей информации, а на последнем шаге инструкции или на решении, которое принял говорящий по итогам разговора.",
+    en:"Focus not on all the information, but on the last step of the instruction or the decision the speaker reached by the end of the conversation."},
+  focusNote:{ru:"Правильный ответ — это следующее действие ПОСЛЕ разговора, а не то, что уже было сделано или сказано в середине диалога.",
+    en:"The correct answer is the action that happens AFTER the conversation ends — not something already done or mentioned mid-dialogue."},
+  commonContexts:[{ru:"офис",en:"office"},{ru:"больница",en:"hospital"},{ru:"банк",en:"bank"},{ru:"учреждение",en:"public office"},{ru:"университет",en:"university"},{ru:"сервисный центр",en:"service center"}],
+  relationshipTypes:[{ru:"сотрудник и посетитель",en:"staff and visitor"},{ru:"коллеги",en:"colleagues"},{ru:"клиент и работник",en:"customer and staff"}],
+  speechFunctions:[{ko:"지시",ru:"инструкция",en:"instruction"},{ko:"안내",ru:"объяснение процедуры",en:"explaining a procedure"},{ko:"확인",ru:"уточнение шага",en:"confirming a step"},{ko:"약속",ru:"договорённость о действии",en:"agreeing on an action"}],
+  signalWords:[
+    {kr:"먼저",ru:"сначала",en:"first",function:{ru:"указывает первый шаг инструкции",en:"marks the first step of a procedure"},example:{kr:"먼저 신청서를 작성하세요.",ru:"Сначала заполните заявление.",en:"First, fill out the application."}},
+    {kr:"그다음에/그러고 나서",ru:"затем, после этого",en:"after that",function:{ru:"следующий шаг",en:"marks the next step"},example:{kr:"그다음에 서류를 제출하세요.",ru:"Затем подайте документы.",en:"After that, submit the documents."}},
+    {kr:"-아/어야 하다",ru:"нужно, должен",en:"must / have to",function:{ru:"обязательное условие для следующего шага",en:"marks a required step"},example:{kr:"먼저 접수해야 해요.",ru:"Сначала нужно зарегистрироваться.",en:"You have to register first."}},
+    {kr:"-(으)ㄹ게요",ru:"я сделаю (обещание/намерение)",en:"I will (do)",function:{ru:"говорящий заявляет о своём следующем действии",en:"the speaker states their next action"},example:{kr:"제가 확인해 볼게요.",ru:"Я проверю.",en:"I'll go check."}}
+  ],
+  traps:[
+    {ru:"вариант описывает действие, которое уже было выполнено ранее в диалоге",en:"the option describes something already done earlier in the dialogue"},
+    {ru:"вариант описывает действие собеседника, а не того, о ком спрашивают",en:"the option describes the other speaker's action, not the one being asked about"},
+    {ru:"вариант звучит логично в целом, но не является непосредственно следующим шагом",en:"the option sounds logical in general but isn't the immediate next step"},
+    {ru:"перепутан порядок шагов инструкции",en:"the order of the instruction steps is mixed up"}
+  ],
+  solvingStrategy:[
+    {ru:"Определите, чьё следующее действие спрашивают (часто — женщина).",en:"Identify whose next action is being asked about (often the woman)."},
+    {ru:"Отследите шаги инструкции по сигнальным словам: 먼저 → 그다음에 → 마지막으로.",en:"Track the steps using signal words: first → then → finally."},
+    {ru:"Отметьте последний невыполненный шаг — это и есть ответ.",en:"Note the last step that hasn't been done yet — that's the answer."},
+    {ru:"Проверьте, не описывает ли вариант то, что уже произошло.",en:"Check that the option isn't describing something that already happened."}
+  ],
+  commonMistakes:[
+    {ru:"выбирают действие, которое уже было сделано в начале диалога",en:"choosing an action that was already completed earlier in the dialogue"},
+    {ru:"путают, чьё действие спрашивают — мужчины или женщины",en:"confusing whose action is being asked about"},
+    {ru:"не отслеживают порядок шагов и выбирают промежуточный, а не финальный шаг",en:"losing track of the step order and picking a middle step instead of the final one"}
+  ],
+  checklist:[
+    {ru:"Я понял(а), чьё действие спрашивают",en:"I understood whose action is being asked about"},
+    {ru:"Я отследил(а) все шаги инструкции по порядку",en:"I tracked all the steps of the instruction in order"},
+    {ru:"Я нашёл(нашла) последний ещё не выполненный шаг",en:"I found the last step that hasn't happened yet"},
+    {ru:"Я исключил(а) варианты с уже сделанными действиями",en:"I eliminated options describing already-completed actions"}
+  ],
+  exampleQuestion:{
+    situation:{ru:"Разговор в учреждении о подаче документов",en:"A conversation at an office about submitting documents"},
+    dialogue:[
+      {sp:"여",kr:"신청서는 다 썼는데 사진이 없어요. 어떻게 해야 하나요?",ru:"Заявление я заполнила, но у меня нет фото. Что делать?",en:"I've filled out the application, but I don't have a photo. What should I do?"},
+      {sp:"남",kr:"1층 사진관에서 찍고 오시면 돼요. 그다음에 여기로 다시 오셔서 접수하시면 됩니다.",ru:"Можете сфотографироваться в фотоателье на первом этаже. Потом вернитесь сюда и подайте документы.",en:"You can get a photo taken at the photo studio on the first floor. Then come back here to submit everything."}
+    ],
+    options:[
+      {ru:"신청서를 작성한다",en:"Fill out the application"},
+      {ru:"1층에서 사진을 찍는다",en:"Get a photo taken on the first floor"},
+      {ru:"접수처 위치를 물어본다",en:"Ask where the reception desk is"},
+      {ru:"서류를 집에 가져간다",en:"Take the documents home"}
+    ],
+    correctIndex:1,
+    explanation:{ru:"Заявление уже заполнено (сказано в начале). Мужчина инструктирует: сначала — фото на 1 этаже, потом — подача документов. Следующий шаг — сделать фото.",
+      en:"The application is already filled out. The man instructs: first get a photo on floor 1, then come back to submit. The very next step is getting the photo."},
+    whyOthersWrong:{ru:"Заявление уже готово — этот шаг пройден. Про местоположение приёмной никто не спрашивал. Унести документы домой прямо противоречит инструкции вернуться и подать их.",
+      en:"The application is already done — that step is finished. Nobody asked where reception is. Taking the documents home directly contradicts the instruction to come back and submit them."},
+    strategyUsed:{ru:"Отслеживание порядка шагов по словам «сфотографироваться → потом вернуться» точно указало на непосредственно следующее действие.",
+      en:"Tracking the step order via \"get a photo → then come back\" pinpointed the immediate next action."}
+  },
+  miniPractice:[
+    {q:{ru:"Какой шаг идёт первым: «먼저 번호표를 뽑고 기다리세요»?",en:"Which step comes first: \"First, take a number and wait\"?"},
+      opts:[{ru:"Ждать",en:"Wait",correct:false},{ru:"Взять номерок",en:"Take a number",correct:true},{ru:"Подойти к окну",en:"Go to the window",correct:false}]},
+    {q:{ru:"Чьё действие спрашивают, если вопрос звучит «여자가 이following 무엇을 할 것 같습니까?»",en:"Whose action is being asked about if the question is \"What will the woman do next?\""},
+      opts:[{ru:"Мужчины",en:"The man's",correct:false},{ru:"Женщины",en:"The woman's",correct:true},{ru:"Обоих",en:"Both",correct:false}]},
+    {q:{ru:"Это уже сделано или предстоит: «신청서는 다 썼는데»?",en:"Already done or still to come: \"I've already filled out the application\"?"},
+      opts:[{ru:"Уже сделано",en:"Already done",correct:true},{ru:"Ещё предстоит",en:"Still to come",correct:false}]}
+  ],
+  recommendedVocabulary:["접수하다","작성하다","제출하다","확인하다"],
+  recommendedGrammar:["A/V-(으)ㄹ 테니(까)","V-(으)려던 참이다"]
+},
+
+"listening_13_16": {
+  id:"listening_13_16", section:"listening", questionRange:"13–16",
+  title:{ru:"Понять общественную информацию", en:"Understand Public Information", ko:"공지·정보 이해하기"},
+  objective:{ru:"Проверяется способность понять содержание общественного объявления, новости или рассказа и определить, какое утверждение точно соответствует услышанному.",
+    en:"Tests whether you can understand a public announcement, news item, or short narration and identify which statement matches it exactly."},
+  taskDescription:{ru:"Прослушайте объявление, новость или монолог и выберите утверждение, которое совпадает с содержанием (내용과 같은 것 고르기).",
+    en:"Listen to an announcement, news report, or monologue and choose the statement that matches its content."},
+  focusPoint:{ru:"Отслеживайте конкретные факты: время, место, условия, числа, причины. Один неточный факт делает весь вариант неверным.",
+    en:"Track concrete facts: time, place, conditions, numbers, causes. One inaccurate fact makes the whole option wrong."},
+  focusNote:{ru:"В этом типе заданий варианты почти всегда используют слова из аудио, но искажают один факт — дату, число, условие или причину.",
+    en:"In this task type, options almost always reuse words from the audio but distort one fact — a date, number, condition, or cause."},
+  commonContexts:[{ru:"общественное учреждение",en:"public office"},{ru:"транспорт",en:"transportation"},{ru:"новости",en:"news"},{ru:"культурное мероприятие",en:"cultural event"},{ru:"безопасность",en:"safety"}],
+  relationshipTypes:[],
+  speechFunctions:[{ko:"공지",ru:"объявление",en:"public notice"},{ko:"보도",ru:"новостное сообщение",en:"news report"},{ko:"설명",ru:"объяснение ситуации",en:"explaining a situation"}],
+  signalWords:[
+    {kr:"에 따르면",ru:"согласно (источнику)",en:"according to",function:{ru:"вводит источник факта",en:"introduces the source of a fact"},example:{kr:"조사에 따르면 이용객이 늘었습니다.",ru:"Согласно опросу, число посетителей выросло.",en:"According to the survey, visitor numbers increased."}},
+    {kr:"-기 때문에",ru:"потому что",en:"because",function:{ru:"указывает причину",en:"marks the cause"},example:{kr:"공사 때문에 통행이 제한됩니다.",ru:"Из-за ремонта движение ограничено.",en:"Passage is restricted because of construction."}},
+    {kr:"-(으)ㄹ 예정이다",ru:"планируется, что...",en:"is scheduled to",function:{ru:"будущее событие/план",en:"a planned future event"},example:{kr:"내일부터 시행될 예정입니다.",ru:"Планируется, что начнёт действовать с завтрашнего дня.",en:"It is scheduled to take effect starting tomorrow."}},
+    {kr:"단,",ru:"однако, при условии что",en:"however / provided that",function:{ru:"вводит важное исключение или условие",en:"introduces an important exception or condition"},example:{kr:"무료입니다. 단, 사전 예약이 필요합니다.",ru:"Бесплатно. Однако требуется предварительная запись.",en:"It's free. However, advance booking is required."}}
+  ],
+  traps:[
+    {ru:"вариант меняет число или дату из объявления",en:"the option changes a number or date from the announcement"},
+    {ru:"вариант меняет причину на другую, похожую по звучанию",en:"the option swaps the cause for a different, similarly-worded one"},
+    {ru:"вариант распространяет условие на всех, хотя в оригинале было исключение (단, ...)",en:"the option applies a rule to everyone even though the original had an exception"},
+    {ru:"вариант звучит правдоподобно, но такого факта в аудио вообще не было",en:"the option sounds plausible but that fact was never mentioned in the audio"}
+  ],
+  solvingStrategy:[
+    {ru:"Слушайте, выделяя про себя факты: кто, что, когда, где, почему, при каком условии.",en:"Listen while mentally tagging facts: who, what, when, where, why, under what condition."},
+    {ru:"Особое внимание — на числа, даты и слово 단 (исключение/условие).",en:"Pay special attention to numbers, dates, and any exception marked by \"however\"."},
+    {ru:"Читайте варианты, сверяя каждый факт по отдельности, а не общее впечатление.",en:"Check each option fact by fact, not by overall impression."},
+    {ru:"Ищите вариант, у которого совпадают ВСЕ детали, а не большинство.",en:"Look for the option where ALL details match, not just most of them."}
+  ],
+  commonMistakes:[
+    {ru:"запоминают общий смысл, но не конкретные цифры и даты",en:"remembering the gist but not the exact numbers and dates"},
+    {ru:"не замечают исключение после слова 단",en:"missing the exception introduced by \"however\""},
+    {ru:"выбирают вариант, который просто звучит правдоподобно",en:"picking an option just because it sounds plausible"}
+  ],
+  checklist:[
+    {ru:"Я запомнил(а) ключевые числа и даты",en:"I remembered the key numbers and dates"},
+    {ru:"Я заметил(а) исключения или условия (단, ...)",en:"I noticed any exceptions or conditions"},
+    {ru:"Я сверил(а) каждый факт варианта отдельно",en:"I checked each fact in the option separately"},
+    {ru:"Я выбрал(а) вариант, где совпадают ВСЕ детали",en:"I chose the option where ALL details match"}
+  ],
+  exampleQuestion:{
+    situation:{ru:"Объявление в жилом комплексе",en:"An announcement in an apartment complex"},
+    text:{kr:"안내 말씀 드립니다. 내일 오전 9시부터 오후 1시까지 단지 내 수도 공사가 진행됩니다. 공사 기간 동안 물 사용이 어려우니 양해 부탁드립니다. 단, 관리사무소에서는 식수를 제공해 드립니다.",
+      ru:"Информационное сообщение. Завтра с 9 утра до часу дня в комплексе будут проводиться работы на водопроводе. В это время пользоваться водой будет сложно, просим отнестись с пониманием. Однако управляющий офис предоставит питьевую воду.",
+      en:"Announcement. Tomorrow from 9 AM to 1 PM, water pipe work will be carried out in the complex. Water use will be difficult during this time — thank you for your understanding. However, the management office will provide drinking water."},
+    options:[
+      {ru:"공사는 하루 종일 진행된다",en:"The work runs all day long"},
+      {ru:"공사 중에는 물을 전혀 마실 수 없다",en:"No drinking water is available at all during the work"},
+      {ru:"관리사무소에서 식수를 나눠준다",en:"The management office will hand out drinking water"},
+      {ru:"공사는 오늘 진행된다",en:"The work is happening today"}
+    ],
+    correctIndex:2,
+    explanation:{ru:"В объявлении прямо сказано, что офис предоставит питьевую воду — это единственный вариант, точно совпадающий с фактом после «단,».",
+      en:"The announcement directly states the office will provide drinking water — this is the only option matching the fact after \"however\"."},
+    whyOthersWrong:{ru:"Работы идут не весь день, а с 9 до 13; вода полностью не отрезана — есть исключение с питьевой водой; работы запланированы на «завтра», а не «сегодня».",
+      en:"The work isn't all day — only 9 AM–1 PM; water isn't completely unavailable because of the drinking-water exception; the work is scheduled for tomorrow, not today."},
+    strategyUsed:{ru:"Отдельная проверка каждой детали (время, слово 단, дата) сразу отсеяла три искажённых варианта.",
+      en:"Checking each detail separately (the time, the exception word, the date) immediately ruled out the three distorted options."}
+  },
+  miniPractice:[
+    {q:{ru:"Какая деталь искажена: аудио «9시부터 1시까지», вариант «하루 종일»?",en:"Which detail is distorted: audio says \"9 to 1\", option says \"all day\"?"},
+      opts:[{ru:"Время",en:"Time",correct:true},{ru:"Место",en:"Place",correct:false},{ru:"Причина",en:"Cause",correct:false}]},
+    {q:{ru:"Что вводит слово «단»?",en:"What does \"however/provided that\" introduce?"},
+      opts:[{ru:"Причину",en:"A cause",correct:false},{ru:"Исключение или условие",en:"An exception or condition",correct:true},{ru:"Место",en:"A place",correct:false}]},
+    {q:{ru:"Нужно ли искать совпадение по одной детали или по всем?",en:"Should you match one detail or all of them?"},
+      opts:[{ru:"Достаточно одной",en:"One is enough",correct:false},{ru:"Нужны все",en:"All of them are needed",correct:true}]}
+  ],
+  recommendedVocabulary:["안내","진행되다","양해하다","제공하다"],
+  recommendedGrammar:["A/V-던데","V-기 바라다"]
+},
+
+"reading_fill_blank": {
+  id:"reading_fill_blank", section:"reading", questionRange:"빈칸",
+  title:{ru:"Заполнение пропуска", en:"Fill in the Blank", ko:"빈칸에 알맞은 말 고르기"},
+  objective:{ru:"Проверяется понимание грамматической и смысловой связи внутри предложения или между двумя частями текста.",
+    en:"Tests whether you understand the grammatical and logical connection within a sentence or between two parts of a text."},
+  taskDescription:{ru:"Прочитайте предложение или короткий текст с пропуском и выберите слово или грамматическую конструкцию, которая логично и грамматически верно заполняет его.",
+    en:"Read a sentence or short passage with a blank and choose the word or grammar pattern that fits it both logically and grammatically."},
+  focusPoint:{ru:"Смотрите не только на пропуск, но и на всё предложение целиком — связь причины, условия, времени или противопоставления часто задаётся словами до или после пропуска.",
+    en:"Look at the whole sentence, not just the blank — the logical connection (cause, condition, time, contrast) is often set by words before or after the gap."},
+  focusNote:{ru:"Часто среди вариантов есть грамматически похожие формы с разным значением — важно не только узнать форму, но и понять её точное значение в контексте.",
+    en:"Options often include grammatically similar forms with different meanings — recognizing the form isn't enough, you must confirm its exact meaning fits the context."},
+  commonContexts:[],
+  relationshipTypes:[],
+  speechFunctions:[],
+  signalWords:[
+    {kr:"그래서/그러니까",ru:"поэтому",en:"so, therefore",function:{ru:"сигнал следствия — в пропуске может быть результат",en:"signals a result — the blank may need a consequence"},example:{kr:"비가 와서 우산을 챙겼어요.",ru:"Шёл дождь, поэтому я взял зонт.",en:"It was raining, so I brought an umbrella."}},
+    {kr:"그런데/하지만",ru:"но, однако",en:"but, however",function:{ru:"сигнал противопоставления",en:"signals a contrast"},example:{kr:"비쌌지만 샀어요.",ru:"Было дорого, но я купил(а).",en:"It was expensive, but I bought it."}},
+    {kr:"만약/혹시",ru:"если, вдруг",en:"if, in case",function:{ru:"сигнал условия — часто требует форму -(으)면",en:"signals a condition — often needs the -(으)면 form"},example:{kr:"만약 비가 오면 취소돼요.",ru:"Если пойдёт дождь, отменится.",en:"If it rains, it's cancelled."}},
+    {kr:"-(으)ㄴ/는데도",ru:"хотя, несмотря на то что",en:"even though",function:{ru:"уступка — результат неожиданный",en:"marks a concession — an unexpected result follows"},example:{kr:"열심히 했는데도 실패했어요.",ru:"Хотя я старался, у меня не получилось.",en:"Even though I tried hard, I failed."}}
+  ],
+  traps:[
+    {ru:"вариант грамматически правильный, но не подходит по смыслу к остальному предложению",en:"the option is grammatically correct but doesn't fit the meaning of the rest of the sentence"},
+    {ru:"перепутаны похожие по форме, но разные по значению конструкции",en:"forms that look similar but have different meanings are swapped"},
+    {ru:"вариант подходит по времени (прошедшее/будущее), но не по логической связи (причина/условие)",en:"the option matches the tense but not the logical relation (cause/condition)"},
+    {ru:"выбрано слово с похожим, но не тем значением (например, синоним не в том оттенке)",en:"a near-synonym is used with a slightly wrong nuance"}
+  ],
+  solvingStrategy:[
+    {ru:"Прочитайте всё предложение целиком, прежде чем смотреть на варианты.",en:"Read the whole sentence before looking at the options."},
+    {ru:"Определите тип связи: причина, следствие, условие, уступка, время, цель.",en:"Identify the type of connection: cause, result, condition, concession, time, or purpose."},
+    {ru:"Проверьте, совпадает ли время/вид действия варианта с контекстом.",en:"Check whether the option's tense/aspect matches the context."},
+    {ru:"Подставьте каждый вариант мысленно и проверьте естественность звучания.",en:"Mentally plug in each option and check whether it sounds natural."},
+    {ru:"Исключите варианты, которые меняют смысл всего предложения.",en:"Eliminate options that change the meaning of the whole sentence."}
+  ],
+  commonMistakes:[
+    {ru:"выбирают знакомую грамматику, не проверив её точное значение в контексте",en:"picking a familiar grammar pattern without checking its exact meaning in context"},
+    {ru:"не читают предложение до конца перед выбором ответа",en:"not reading the full sentence before choosing"},
+    {ru:"путают близкие по форме конструкции (-아/어서 и -(으)니까, -는데 и -지만)",en:"confusing similar-looking patterns"}
+  ],
+  checklist:[
+    {ru:"Я прочитал(а) всё предложение целиком",en:"I read the entire sentence"},
+    {ru:"Я определил(а) тип логической связи",en:"I identified the type of logical connection"},
+    {ru:"Я проверил(а) время и вид действия",en:"I checked the tense and aspect"},
+    {ru:"Я мысленно подставил(а) каждый вариант",en:"I mentally tested each option in the sentence"}
+  ],
+  exampleQuestion:{
+    text:{kr:"오늘 아침에 늦게 일어나서 학교에 ( ).",ru:"Сегодня утром я проснулся(лась) поздно, поэтому в школу ( ).",en:"I woke up late this morning, so to school ( )."},
+    options:[{ru:"지각했어요 (опоздал)",en:"I was late"},{ru:"일찍 갔어요 (пошёл рано)",en:"I went early"},{ru:"안 갔어요 (не пошёл)",en:"I didn't go"},{ru:"가고 싶어요 (хочу пойти)",en:"I want to go"}],
+    correctIndex:0,
+    explanation:{ru:"Слово «그래서-подобная» связь (проснулся поздно → …) логично требует следствия «опоздал». Только этот вариант связан причинно-следственно с первой частью.",
+      en:"\"Woke up late, so...\" sets up a cause-effect link that logically requires \"was late\". Only this option follows causally from the first clause."},
+    whyOthersWrong:{ru:"«Пошёл рано» противоречит тому, что проснулся поздно. «Не пошёл» и «хочу пойти» не связаны с описанной причиной вообще.",
+      en:"\"Went early\" contradicts waking up late. \"Didn't go\" and \"want to go\" have no logical link to the stated cause at all."},
+    strategyUsed:{ru:"Определение типа связи (причина → следствие) сразу сократило выбор до одного логичного варианта.",
+      en:"Identifying the cause-effect relationship immediately narrowed the choice down to one logical option."}
+  },
+  miniPractice:[
+    {q:{ru:"Какая связь в предложении «비가 와서 소풍이 취소됐어요»?",en:"What kind of link is in \"It rained, so the picnic was cancelled\"?"},
+      opts:[{ru:"Причина-следствие",en:"Cause-effect",correct:true},{ru:"Противопоставление",en:"Contrast",correct:false},{ru:"Условие",en:"Condition",correct:false}]},
+    {q:{ru:"Какое слово сигнализирует уступку: «열심히 공부했는데도 시험에 떨어졌어요»?",en:"Which word signals concession in \"I studied hard, yet I failed the exam\"?"},
+      opts:[{ru:"-는데도",en:"-는데도 (even though)",correct:true},{ru:"-아/어서",en:"-아/어서 (because)",correct:false},{ru:"-(으)면",en:"-(으)면 (if)",correct:false}]},
+    {q:{ru:"Подходит ли будущее время в пропуск для прошедшего контекста «어제...»?",en:"Does a future-tense option fit a blank in a past-tense context (\"yesterday...\")?"},
+      opts:[{ru:"Да, всегда",en:"Yes, always",correct:false},{ru:"Нет, время должно совпадать",en:"No, the tense must match",correct:true}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["A/V-아/어야","A-(으)ㄴ 탓에, V-는 탓에","V-는 대신(에)"]
+},
+
+"reading_vocab_grammar": {
+  id:"reading_vocab_grammar", section:"reading", questionRange:"어휘·문법",
+  title:{ru:"Выбор подходящей лексики или грамматики", en:"Choosing the Right Vocabulary or Grammar", ko:"어휘·문법 고르기"},
+  objective:{ru:"Проверяется словарный запас и точное понимание оттенков значения близких по смыслу слов и конструкций.",
+    en:"Tests vocabulary range and precise understanding of nuance between near-synonymous words and patterns."},
+  taskDescription:{ru:"Прочитайте предложение и выберите слово или конструкцию, максимально точно передающую смысл (часто — замену подчёркнутой части на синоним).",
+    en:"Read the sentence and choose the word or pattern that most precisely conveys the meaning (often replacing an underlined part with a near-synonym)."},
+  focusPoint:{ru:"Сравнивайте не общее значение, а точный оттенок: степень вежливости, эмоциональную окраску, формальность, интенсивность.",
+    en:"Compare not just the general meaning but the exact nuance: politeness level, emotional tone, formality, intensity."},
+  focusNote:{ru:"В этом типе заданий почти все варианты «примерно подходят» — правильный лишь тот, что не меняет ни один оттенок исходного смысла.",
+    en:"In this task type almost every option is \"roughly close\" — the correct one is the only one that changes none of the original nuance."},
+  commonContexts:[],
+  relationshipTypes:[],
+  speechFunctions:[],
+  signalWords:[
+    {kr:"-(으)ㄹ 뿐이다",ru:"только, всего лишь",en:"nothing but",function:{ru:"ограничение — усиливает «только»",en:"emphasizes \"only\""},example:{kr:"기다릴 뿐이에요.",ru:"Остаётся только ждать.",en:"All I can do is wait."}},
+    {kr:"-(으)ㄴ/는 셈이다",ru:"считай, что...; практически",en:"practically, as good as",function:{ru:"приблизительная оценка ситуации",en:"an approximate assessment"},example:{kr:"거의 다 한 셈이에요.",ru:"Считай, почти всё сделано.",en:"It's practically all done."}},
+    {kr:"불과하다",ru:"составлять всего лишь",en:"amount to no more than",function:{ru:"подчёркивает малость величины",en:"emphasizes smallness of amount"},example:{kr:"10%에 불과해요.",ru:"Это всего лишь 10%.",en:"That's only 10%."}}
+  ],
+  traps:[
+    {ru:"синоним верен по общему смыслу, но меняет уровень вежливости",en:"the synonym is close in meaning but shifts the politeness level"},
+    {ru:"синоним верен по смыслу, но меняет степень уверенности говорящего",en:"the synonym is close in meaning but changes the speaker's degree of certainty"},
+    {ru:"выбрано слово с похожим написанием, но другим значением",en:"a word that looks similar but means something different is chosen"},
+    {ru:"конструкция грамматически возможна, но неестественна в письменном/официальном стиле текста",en:"the pattern is grammatically possible but unnatural for the text's written/formal register"}
+  ],
+  solvingStrategy:[
+    {ru:"Определите точное значение подчёркнутого слова/конструкции в контексте.",en:"Determine the exact meaning of the underlined word/pattern in context."},
+    {ru:"Сравните оттенки всех вариантов: вежливость, уверенность, эмоцию, формальность.",en:"Compare the nuance of every option: politeness, certainty, emotion, formality."},
+    {ru:"Мысленно подставьте вариант на место подчёркнутого — не изменился ли общий тон предложения.",en:"Mentally substitute the option — check that the sentence's overall tone hasn't shifted."},
+    {ru:"Выберите вариант с минимальным изменением смысла.",en:"Choose the option with the smallest change in meaning."}
+  ],
+  commonMistakes:[
+    {ru:"выбирают первый «похожий по смыслу» вариант, не сравнив остальные",en:"picking the first \"roughly similar\" option without comparing the rest"},
+    {ru:"не учитывают формальность и стиль текста",en:"ignoring the formality and style of the text"},
+    {ru:"путают близкие по написанию, но разные по значению слова",en:"confusing words that look alike but mean different things"}
+  ],
+  checklist:[
+    {ru:"Я понял(а) точное значение исходного слова/конструкции",en:"I understood the exact meaning of the original word/pattern"},
+    {ru:"Я сравнил(а) оттенки всех вариантов",en:"I compared the nuance of all the options"},
+    {ru:"Я проверил(а) стиль и формальность текста",en:"I checked the text's style and formality"},
+    {ru:"Я выбрал(а) вариант с минимальным изменением смысла",en:"I chose the option that changes the meaning the least"}
+  ],
+  exampleQuestion:{
+    text:{kr:"지금 출발하지 않으면 약속 시간에 늦을지도 모른다.",ru:"Если не выехать сейчас, есть вероятность опоздать на встречу.",en:"If we don't leave now, we might be late for the appointment."},
+    options:[{ru:"늦는 셈이다 (считай, опаздываем)",en:"is as good as being late"},{ru:"늦어도 된다 (можно и опоздать)",en:"it's fine to be late"},{ru:"늦을 리가 없다 (не может быть, чтобы опоздали)",en:"there's no way we'll be late"},{ru:"늦을 수도 있다 (можем опоздать)",en:"we might be late"}],
+    correctIndex:3,
+    explanation:{ru:"«-ㄹ지도 모른다» выражает возможность, ту же степень неуверенности передаёт «-(으)ㄹ 수도 있다». Остальные варианты меняют степень уверенности.",
+      en:"\"Might\" expresses possibility — \"could possibly\" carries the same degree of uncertainty. The other options change that degree."},
+    whyOthersWrong:{ru:"«Считай опаздываем» звучит как факт, а не возможность; «можно опоздать» меняет смысл на разрешение; «не может быть, чтобы опоздали» вообще противоположно по смыслу.",
+      en:"\"As good as being late\" states it as fact, not possibility; \"it's fine to be late\" turns it into permission; \"there's no way\" is the opposite meaning."},
+    strategyUsed:{ru:"Сравнение степени уверенности каждого варианта с исходным «может быть» сразу выявило единственно точный синоним.",
+      en:"Comparing each option's degree of certainty against the original \"might\" immediately revealed the one precise synonym."}
+  },
+  miniPractice:[
+    {q:{ru:"«-(으)ㄹ 뿐이다» ближе по смыслу к:",en:"\"Nothing but/only\" is closest in meaning to:"},
+      opts:[{ru:"только",en:"only",correct:true},{ru:"уже",en:"already",correct:false},{ru:"наверное",en:"probably",correct:false}]},
+    {q:{ru:"Меняет ли «불과하다» степень величины?",en:"Does \"amounts to no more than\" affect the sense of size/amount?"},
+      opts:[{ru:"Да, подчёркивает малость",en:"Yes, it emphasizes smallness",correct:true},{ru:"Нет, нейтрально",en:"No, it's neutral",correct:false}]},
+    {q:{ru:"«-(으)ㄴ/는 셈이다» звучит как факт или как приблизительная оценка?",en:"Does \"practically / as good as\" sound like a fact or an approximation?"},
+      opts:[{ru:"Факт",en:"A fact",correct:false},{ru:"Приблизительная оценка",en:"An approximation",correct:true}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["A/V-(으)ㄹ 뿐이다","N-에 불과하다","A-(으)ㄴ 셈이다, V-는 셈이다"]
+},
+
+"reading_order": {
+  id:"reading_order", section:"reading", questionRange:"순서 배열",
+  title:{ru:"Восстановление порядка предложений", en:"Sentence Ordering", ko:"순서대로 배열하기"},
+  objective:{ru:"Проверяется понимание логической и грамматической связности текста — как предложения соединяются друг с другом.",
+    en:"Tests understanding of textual cohesion — how sentences logically and grammatically connect to one another."},
+  taskDescription:{ru:"Даны 4 предложения в перепутанном порядке — расположите их в логически связный текст.",
+    en:"You're given 4 sentences in scrambled order — arrange them into a logically coherent text."},
+  focusPoint:{ru:"Ищите предложение-«якорь», с которого логично начинается текст (обычно без ссылочных слов вроде «это», «однако»), и слова-связки: местоимения, союзы, порядковые слова.",
+    en:"Find the \"anchor\" sentence the text logically starts with (usually free of referring words like \"this\" or \"however\"), then track connectors: pronouns, conjunctions, sequence words."},
+  focusNote:{ru:"Предложение, которое начинается с «그러나/하지만/이러한/이것은», почти никогда не идёт первым — оно ссылается на что-то, сказанное раньше.",
+    en:"A sentence starting with \"however\", \"this\", or \"such\" almost never comes first — it refers back to something already said."},
+  commonContexts:[],
+  relationshipTypes:[],
+  speechFunctions:[],
+  signalWords:[
+    {kr:"이/그/저 + существительное",ru:"этот/тот (указывает на уже упомянутое)",en:"this/that (refers back to something already mentioned)",function:{ru:"такое предложение не может быть первым",en:"a sentence with this can't come first"},example:{kr:"이 방법은 효과적이다.",ru:"Этот метод эффективен.",en:"This method is effective."}},
+    {kr:"먼저/우선",ru:"сначала, прежде всего",en:"first of all",function:{ru:"часто открывает текст или список",en:"often opens a text or a list"},example:{kr:"먼저 원인을 살펴보자.",ru:"Сначала рассмотрим причину.",en:"First, let's look at the cause."}},
+    {kr:"그러나/하지만/반면에",ru:"однако, но, с другой стороны",en:"however, but, on the other hand",function:{ru:"вводит противопоставление к уже сказанному",en:"introduces a contrast to what was already said"},example:{kr:"그러나 문제도 있다.",ru:"Однако есть и проблема.",en:"However, there is also a problem."}},
+    {kr:"따라서/그래서/결국",ru:"поэтому, в итоге",en:"therefore, in the end",function:{ru:"обычно ближе к концу — вывод",en:"usually near the end — a conclusion"},example:{kr:"따라서 대책이 필요하다.",ru:"Поэтому нужны меры.",en:"Therefore, measures are needed."}}
+  ],
+  traps:[
+    {ru:"два предложения кажутся одинаково подходящими для начала",en:"two sentences seem equally plausible as the opener"},
+    {ru:"указательное слово (이, 그) отнесено не к тому предложению",en:"a demonstrative word is linked to the wrong preceding sentence"},
+    {ru:"вывод (따라서/결국) поставлен не в конец, а в середину",en:"the conclusion marker is placed in the middle instead of at the end"},
+    {ru:"порядок грамматически возможен, но нарушает хронологию событий",en:"the order is grammatically possible but breaks the chronology of events"}
+  ],
+  solvingStrategy:[
+    {ru:"Найдите предложение без ссылочных слов — вероятный первый.",en:"Find the sentence without referring words — it's the likely opener."},
+    {ru:"Исключите как первые все предложения с «그러나/이것은/따라서».",en:"Rule out as openers any sentences starting with \"however/this/therefore\"."},
+    {ru:"Проследите местоимения и указательные слова — к чему они относятся.",en:"Trace pronouns and demonstratives — see what they refer back to."},
+    {ru:"Разместите вывод (따라서/결국) ближе к концу.",en:"Place the conclusion marker near the end."},
+    {ru:"Прочитайте получившийся текст целиком — он должен звучать связно.",en:"Read the assembled text as a whole — it should sound coherent."}
+  ],
+  commonMistakes:[
+    {ru:"ставят первым предложение со словом «이것은/그러나»",en:"placing a sentence starting with \"this/however\" first"},
+    {ru:"не проверяют итоговый текст целиком после составления порядка",en:"not re-reading the whole assembled text after ordering it"},
+    {ru:"полагаются только на грамматику, игнорируя хронологию событий",en:"relying only on grammar while ignoring the chronology of events"}
+  ],
+  checklist:[
+    {ru:"Я нашёл(нашла) предложение без ссылочных слов — потенциальный первый",en:"I found the sentence without referring words as a candidate opener"},
+    {ru:"Я проследил(а), к чему относятся местоимения и «이/그»",en:"I traced what the pronouns and demonstratives refer to"},
+    {ru:"Я поставил(а) вывод ближе к концу",en:"I placed the conclusion near the end"},
+    {ru:"Я перечитал(а) итоговый текст целиком",en:"I reread the assembled text as a whole"}
+  ],
+  exampleQuestion:{
+    text:{kr:"(가) 그러나 최근에는 온라인으로 신청하는 사람이 더 많아졌다.\n(나) 예전에는 도서관에서 책을 빌리려면 직접 방문해야 했다.\n(다) 이러한 변화는 이용자들의 시간을 크게 절약해 준다.\n(라) 온라인 신청 시스템이 도입되면서 이용 방법이 다양해졌다.",
+      ru:"(가) Однако в последнее время всё больше людей подают заявку онлайн.\n(나) Раньше, чтобы взять книгу в библиотеке, нужно было приходить лично.\n(다) Это изменение значительно экономит время пользователей.\n(라) С введением системы онлайн-заявок способы пользования стали разнообразнее.",
+      en:"(A) However, recently more people apply online.\n(B) In the past, borrowing a book from the library required an in-person visit.\n(C) This change greatly saves users' time.\n(D) With the introduction of the online application system, ways of using the library became more varied."},
+    options:[{ru:"나-가-라-다",en:"B-A-D-C"},{ru:"가-나-다-라",en:"A-B-C-D"},{ru:"나-다-가-라",en:"B-C-A-D"},{ru:"라-나-가-다",en:"D-B-A-C"}],
+    correctIndex:0,
+    explanation:{ru:"(나) не содержит ссылочных слов — логичное начало (раньше было так). (가) начинается с «그러나» — противопоставление к (나). (라) продолжает мысль о новой системе. (다) с «이러한» подводит итог — идёт последним.",
+      en:"(B) has no referring words — a logical start (\"in the past...\"). (A) starts with \"however\" — a contrast to (B). (D) continues the idea of the new system. (C), with \"this\", wraps up — it goes last."},
+    whyOthersWrong:{ru:"Начинать с (가) или (라) нельзя — они ссылаются на уже сказанное («однако», «с введением системы»). Порядок «나-다-가-라» разрывает переход от «однако» к системе онлайн.",
+      en:"Starting with (A) or (D) is impossible — they refer to something already said. The order \"B-C-A-D\" breaks the flow from \"however\" into the online system."},
+    strategyUsed:{ru:"Поиск предложения без ссылочных слов для старта плюс отслеживание «그러나» и «이러한» точно восстановили порядок.",
+      en:"Finding the referring-word-free opener plus tracking \"however\" and \"this\" restored the exact order."}
+  },
+  miniPractice:[
+    {q:{ru:"Может ли предложение с «이것은» идти первым?",en:"Can a sentence starting with \"this\" go first?"},
+      opts:[{ru:"Да, часто",en:"Yes, often",correct:false},{ru:"Нет, почти никогда",en:"No, almost never",correct:true}]},
+    {q:{ru:"Где обычно стоит предложение с «따라서»?",en:"Where does a sentence with \"therefore\" usually go?"},
+      opts:[{ru:"В начале",en:"At the start",correct:false},{ru:"Ближе к концу",en:"Near the end",correct:true}]},
+    {q:{ru:"«그러나» вводит…",en:"\"However\" introduces…"},
+      opts:[{ru:"Противопоставление",en:"A contrast",correct:true},{ru:"Причину",en:"A cause",correct:false}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["N에 대한","V-다(가) 보면"]
+},
+
+"reading_main_idea": {
+  id:"reading_main_idea", section:"reading", questionRange:"중심 생각",
+  title:{ru:"Определение главной мысли", en:"Finding the Main Idea", ko:"중심 생각 고르기"},
+  objective:{ru:"Проверяется способность отличить главную мысль автора от второстепенных деталей и примеров.",
+    en:"Tests the ability to distinguish the author's main point from supporting details and examples."},
+  taskDescription:{ru:"Прочитайте текст и выберите утверждение, которое точнее всего передаёт главную мысль автора.",
+    en:"Read the text and choose the statement that best captures the author's main point."},
+  focusPoint:{ru:"Ищите мысль, которая обобщает весь текст, а не только его часть. Часто она находится в последнем предложении или после слов «따라서/결국/즉».",
+    en:"Look for the idea that summarizes the whole text, not just part of it. It's often in the last sentence or introduced by \"therefore/in the end/in other words\"."},
+  focusNote:{ru:"Правильный ответ не повторяет текст дословно — он обобщает мысль своими словами. Дословное совпадение с одним предложением текста часто оказывается ловушкой на деталь, а не на главную мысль.",
+    en:"The correct answer rarely repeats the text word-for-word — it paraphrases the idea. A verbatim match with a single sentence is often a trap that picks a detail instead of the main idea."},
+  commonContexts:[],
+  relationshipTypes:[],
+  speechFunctions:[],
+  signalWords:[
+    {kr:"즉",ru:"то есть, иными словами",en:"in other words",function:{ru:"часто вводит переформулировку главной мысли",en:"often introduces a restatement of the main idea"},example:{kr:"즉, 꾸준한 노력이 중요하다.",ru:"То есть, важны постоянные усилия.",en:"In other words, consistent effort matters."}},
+    {kr:"결국/따라서",ru:"в итоге, поэтому",en:"in the end, therefore",function:{ru:"вводит вывод — часто это и есть главная мысль",en:"introduces a conclusion — often the main idea itself"},example:{kr:"결국 습관이 실력을 만든다.",ru:"В итоге именно привычка формирует навык.",en:"In the end, habit is what builds skill."}},
+    {kr:"무엇보다",ru:"прежде всего",en:"above all",function:{ru:"выделяет приоритет автора",en:"marks the author's priority"},example:{kr:"무엇보다 건강이 중요하다.",ru:"Прежде всего важно здоровье.",en:"Above all, health matters."}}
+  ],
+  traps:[
+    {ru:"вариант описывает только пример из текста, а не общий вывод",en:"the option describes only an example from the text, not the overall conclusion"},
+    {ru:"вариант слишком широкий и не связан именно с текстом",en:"the option is too broad and not specifically tied to the text"},
+    {ru:"вариант дословно повторяет одно предложение, но не всю мысль текста",en:"the option quotes one sentence verbatim but misses the point of the whole text"},
+    {ru:"вариант противоположен позиции автора",en:"the option is the opposite of the author's actual position"}
+  ],
+  solvingStrategy:[
+    {ru:"Прочитайте текст целиком, не останавливаясь на деталях.",en:"Read the whole text without getting stuck on details."},
+    {ru:"Найдите предложение-вывод (обычно в конце, после «따라서/결국/즉»).",en:"Find the concluding sentence (usually at the end, after \"therefore/in the end/in other words\")."},
+    {ru:"Сформулируйте главную мысль своими словами до просмотра вариантов.",en:"Formulate the main idea in your own words before looking at the options."},
+    {ru:"Исключите варианты, описывающие только пример или деталь.",en:"Eliminate options that describe only an example or a detail."}
+  ],
+  commonMistakes:[
+    {ru:"выбирают вариант с деталью или примером вместо обобщения",en:"choosing an option about a detail or example instead of the generalization"},
+    {ru:"путают тему текста с главной мыслью автора",en:"confusing the topic of the text with the author's actual point about it"},
+    {ru:"выбирают дословную цитату, не проверив, обобщает ли она весь текст",en:"picking a verbatim quote without checking whether it covers the whole text"}
+  ],
+  checklist:[
+    {ru:"Я нашёл(нашла) предложение-вывод в тексте",en:"I found the concluding sentence in the text"},
+    {ru:"Я сформулировал(а) главную мысль своими словами",en:"I stated the main idea in my own words"},
+    {ru:"Я исключил(а) варианты про отдельные детали/примеры",en:"I eliminated options about isolated details/examples"},
+    {ru:"Выбранный вариант обобщает весь текст, а не его часть",en:"My chosen option summarizes the whole text, not just part of it"}
+  ],
+  exampleQuestion:{
+    text:{kr:"많은 사람들이 외국어를 배울 때 단어를 많이 외우는 것에 집중한다. 하지만 단어를 안다고 해서 바로 대화를 잘할 수 있는 것은 아니다. 실제로 짧은 문장이라도 반복해서 말해 보는 연습이 훨씬 더 중요하다. 결국 언어는 아는 것이 아니라 쓰는 것을 통해 늘어난다.",
+      ru:"Многие люди, изучая иностранный язык, сосредотачиваются на заучивании множества слов. Но знание слов ещё не означает, что сразу получится хорошо разговаривать. На самом деле гораздо важнее практика — повторение хотя бы коротких фраз. В итоге язык развивается не через знание, а через использование.",
+      en:"Many people focus on memorizing lots of words when learning a foreign language. But knowing words doesn't mean you can immediately speak well. In fact, practicing — repeating even short sentences — is far more important. In the end, language improves not through knowledge but through use."},
+    options:[
+      {ru:"외국어를 배우려면 단어를 많이 외워야 한다",en:"To learn a foreign language, you must memorize many words"},
+      {ru:"짧은 문장을 반복해서 말하는 연습이 언어 실력 향상에 중요하다",en:"Practicing short sentences repeatedly is important for improving language skill"},
+      {ru:"외국어 학습은 매우 어렵다",en:"Learning a foreign language is very difficult"},
+      {ru:"단어를 아는 사람은 대화를 잘한다",en:"People who know words are good at conversation"}
+    ],
+    correctIndex:1,
+    explanation:{ru:"Текст завершается выводом «결국 … 쓰는 것을 통해 늘어난다» — язык растёт через практику (использование), а не через знание слов. Это и есть главная мысль.",
+      en:"The text ends with the conclusion that language improves through use, not knowledge — that is the main idea."},
+    whyOthersWrong:{ru:"«Нужно много слов» — это то, с чем автор как раз не согласен («하지만»). Про сложность языка текст вообще не говорит. «Кто знает слова — хорошо говорит» прямо противоречит тексту.",
+      en:"\"Must memorize many words\" is exactly what the author disagrees with. The text says nothing about difficulty. \"Knowing words means speaking well\" directly contradicts the text."},
+    strategyUsed:{ru:"Поиск слова-сигнала «결국» сразу привёл к предложению-выводу, из которого была сформулирована главная мысль.",
+      en:"Finding the signal word \"in the end\" led straight to the concluding sentence, from which the main idea was drawn."}
+  },
+  miniPractice:[
+    {q:{ru:"Какое слово чаще всего вводит вывод-обобщение?",en:"Which word most often introduces a summarizing conclusion?"},
+      opts:[{ru:"결국",en:"결국 (in the end)",correct:true},{ru:"예를 들어",en:"예를 들어 (for example)",correct:false}]},
+    {q:{ru:"Пример из текста — это главная мысль или деталь?",en:"Is an example from the text the main idea or a supporting detail?"},
+      opts:[{ru:"Главная мысль",en:"The main idea",correct:false},{ru:"Деталь",en:"A supporting detail",correct:true}]},
+    {q:{ru:"Должен ли верный вариант дословно повторять предложение текста?",en:"Must the correct option quote a sentence from the text verbatim?"},
+      opts:[{ru:"Да, обязательно",en:"Yes, always",correct:false},{ru:"Нет, чаще это перефразировка",en:"No, it's usually a paraphrase",correct:true}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["V-기 위해(서)","N에 의하면"]
+},
+
+"reading_content_match": {
+  id:"reading_content_match", section:"reading", questionRange:"내용 일치",
+  title:{ru:"Соответствие содержанию", en:"Matching the Content", ko:"내용과 같은 것 고르기"},
+  objective:{ru:"Проверяется точное понимание фактов текста и способность отличить точное совпадение от похожего, но искажённого утверждения.",
+    en:"Tests precise comprehension of the text's facts and the ability to distinguish an exact match from a similar but distorted statement."},
+  taskDescription:{ru:"Прочитайте текст и выберите утверждение, которое ТОЧНО совпадает с его содержанием.",
+    en:"Read the text and choose the statement that EXACTLY matches its content."},
+  focusPoint:{ru:"Проверяйте каждый факт по отдельности: кто, что, когда, сколько, при каком условии — а не общее впечатление от текста.",
+    en:"Check each fact individually — who, what, when, how much, under what condition — not your overall impression of the text."},
+  focusNote:{ru:"Три из четырёх вариантов почти всегда содержат слова из текста, но искажают один факт. Ищите не «похоже», а «точно совпадает».",
+    en:"Three of the four options almost always reuse words from the text but distort one fact. Look for an exact match, not just something that sounds similar."},
+  commonContexts:[],
+  relationshipTypes:[],
+  speechFunctions:[],
+  signalWords:[
+    {kr:"만/뿐",ru:"только",en:"only",function:{ru:"ограничивает утверждение — легко исказить, убрав его",en:"limits a statement — easy to distort by dropping it"},example:{kr:"회원만 이용할 수 있어요.",ru:"Пользоваться могут только участники.",en:"Only members can use it."}},
+    {kr:"모두/전부",ru:"все, целиком",en:"all, entirely",function:{ru:"обобщение — легко исказить, если в тексте было исключение",en:"a generalization — easy to distort if the text had an exception"},example:{kr:"모두 무료입니다.",ru:"Всё бесплатно.",en:"Everything is free."}},
+    {kr:"이후/이전",ru:"после/до",en:"after/before",function:{ru:"порядок событий во времени — частая ловушка",en:"time order — a frequent trap"},example:{kr:"신청 이후에 취소할 수 없어요.",ru:"После подачи заявки отменить нельзя.",en:"You can't cancel after applying."}}
+  ],
+  traps:[
+    {ru:"вариант меняет число или процент из текста",en:"the option changes a number or percentage from the text"},
+    {ru:"вариант убирает ограничение «только», делая утверждение слишком общим",en:"the option drops \"only\", making the statement too general"},
+    {ru:"вариант меняет порядок «до/после» на противоположный",en:"the option reverses the before/after order"},
+    {ru:"вариант приписывает действие не тому лицу",en:"the option attributes an action to the wrong person"}
+  ],
+  solvingStrategy:[
+    {ru:"Читайте текст, отмечая про себя ключевые факты и цифры.",en:"Read the text, mentally noting the key facts and numbers."},
+    {ru:"Проверяйте каждый вариант построчно, а не по общему впечатлению.",en:"Check each option fact-by-fact, not by overall impression."},
+    {ru:"Обращайте особое внимание на «только», «все», «до/после».",en:"Pay special attention to \"only\", \"all\", \"before/after\"."},
+    {ru:"Ищите вариант без единого расхождения с текстом.",en:"Look for the option with zero discrepancies from the text."}
+  ],
+  commonMistakes:[
+    {ru:"выбирают вариант, который «в целом похож» на текст",en:"picking an option that's \"roughly similar\" to the text"},
+    {ru:"не замечают убранное или добавленное слово «только»",en:"missing a dropped or added \"only\""},
+    {ru:"путают, кто совершил действие",en:"mixing up who performed the action"}
+  ],
+  checklist:[
+    {ru:"Я сверил(а) числа и даты",en:"I checked the numbers and dates"},
+    {ru:"Я проверил(а) слова «только/все/до/после»",en:"I checked words like \"only/all/before/after\""},
+    {ru:"Я проверил(а), кто совершает действие",en:"I checked who performs the action"},
+    {ru:"Выбранный вариант совпадает с текстом без единого расхождения",en:"My chosen option matches the text with zero discrepancies"}
+  ],
+  exampleQuestion:{
+    text:{kr:"이 도서관은 오전 9시부터 오후 6시까지 운영되며, 회원만 도서 대출이 가능하다. 회원 가입은 신분증만 있으면 누구나 할 수 있다.",
+      ru:"Эта библиотека работает с 9 утра до 6 вечера, брать книги на дом могут только участники. Стать участником может любой человек — достаточно удостоверения личности.",
+      en:"This library operates from 9 AM to 6 PM, and only members can borrow books. Anyone can become a member — an ID is all that's required."},
+    options:[
+      {ru:"이 도서관은 24시간 운영된다",en:"This library operates 24 hours"},
+      {ru:"회원이 아니어도 책을 빌릴 수 있다",en:"Non-members can also borrow books"},
+      {ru:"신분증이 있으면 누구나 회원이 될 수 있다",en:"Anyone with an ID can become a member"},
+      {ru:"회원 가입에는 특별한 자격이 필요하다",en:"Becoming a member requires special qualifications"}
+    ],
+    correctIndex:2,
+    explanation:{ru:"Текст прямо говорит: стать участником может любой при наличии удостоверения личности. Это единственное утверждение, совпадающее без расхождений.",
+      en:"The text directly states anyone can become a member with an ID. This is the only statement matching without discrepancy."},
+    whyOthersWrong:{ru:"Библиотека работает не круглосуточно, а до 18:00; книги может брать только участник, а не любой; никаких «особых» требований, кроме удостоверения, не упомянуто.",
+      en:"The library isn't open 24 hours — only until 6 PM; only members can borrow, not anyone; no \"special\" qualifications beyond an ID are mentioned."},
+    strategyUsed:{ru:"Построчная сверка каждого варианта с фактами текста («только участники», «до 18:00», «только удостоверение») выявила единственный точный.",
+      en:"Checking each option fact-by-fact against the text (\"members only\", \"until 6 PM\", \"just an ID\") revealed the one exact match."}
+  },
+  miniPractice:[
+    {q:{ru:"Текст: «회원만 가능하다». Вариант: «누구나 가능하다». Совпадают?",en:"Text: \"only members\". Option: \"anyone can\". Do they match?"},
+      opts:[{ru:"Да",en:"Yes",correct:false},{ru:"Нет — потеряно ограничение",en:"No — the restriction is lost",correct:true}]},
+    {q:{ru:"Текст: «가입 이후에 취소 불가». Вариант: «가입 이전에 취소 불가». Совпадают?",en:"Text: \"can't cancel after joining\". Option: \"can't cancel before joining\". Match?"},
+      opts:[{ru:"Да",en:"Yes",correct:false},{ru:"Нет — порядок изменён",en:"No — the order is reversed",correct:true}]},
+    {q:{ru:"Достаточно ли «похожего смысла», чтобы вариант засчитали верным?",en:"Is \"roughly similar meaning\" enough to count an option as correct?"},
+      opts:[{ru:"Да",en:"Yes",correct:false},{ru:"Нет, нужно точное совпадение",en:"No, an exact match is required",correct:true}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["A/V-(으)면 되다","V-는 동안"]
+},
+
+"reading_title": {
+  id:"reading_title", section:"reading", questionRange:"제목 고르기",
+  title:{ru:"Выбор заголовка", en:"Choosing the Headline", ko:"신문 기사 제목 고르기"},
+  objective:{ru:"Проверяется способность понять сжатый, часто метафоричный газетный заголовок и соотнести его с полным смыслом новости.",
+    en:"Tests the ability to understand a condensed, often figurative newspaper headline and connect it to the news item's full meaning."},
+  taskDescription:{ru:"Прочитайте короткий газетный заголовок и выберите вариант, который точнее всего объясняет, о чём эта новость.",
+    en:"Read a short newspaper headline and choose the option that best explains what the news is actually about."},
+  focusPoint:{ru:"Заголовки TOPIK часто используют образные выражения и идиомы — сначала разберите их буквальный и переносный смысл, а потом ищите вариант с тем же смыслом, но простыми словами.",
+    en:"TOPIK headlines often use figurative expressions and idioms — first decode their literal and figurative meaning, then look for the option that says the same thing in plain words."},
+  focusNote:{ru:"Заголовок — это не полное предложение, а сжатый сигнал. Не пытайтесь перевести его дословно: ищите смысл, который он передаёт.",
+    en:"A headline isn't a full sentence, it's a condensed cue. Don't translate it literally — find the meaning it conveys."},
+  commonContexts:[{ru:"экономика",en:"economy"},{ru:"спорт",en:"sports"},{ru:"общество",en:"society"},{ru:"технологии",en:"technology"},{ru:"культура",en:"culture"}],
+  relationshipTypes:[],
+  speechFunctions:[],
+  signalWords:[
+    {kr:"~ 훈풍",ru:"«тёплый ветер» — образ позитивных перемен",en:"\"warm wind\" — a figure for positive change",function:{ru:"метафора улучшения ситуации",en:"a metaphor for improvement"},example:{kr:"수출에 훈풍이 분다.",ru:"В экспорте подул «тёплый ветер» (наметилось улучшение).",en:"A \"warm wind\" is blowing through exports (things are improving)."}},
+    {kr:"~ 비상",ru:"«тревога» — образ кризисной ситуации",en:"\"alarm\" — a figure for a crisis",function:{ru:"метафора серьёзной проблемы",en:"a metaphor for a serious problem"},example:{kr:"물가 비상.",ru:"Тревога по ценам (цены резко выросли).",en:"Price alarm (prices are surging)."}},
+    {kr:"~ 끝, ~ 시작",ru:"«конец…», «начало…»",en:"\"the end of...\", \"the start of...\"",function:{ru:"обозначает переломный момент",en:"marks a turning point"},example:{kr:"긴 가뭄 끝, 단비.",ru:"После долгой засухи — долгожданный дождь.",en:"After a long drought, welcome rain."}}
+  ],
+  traps:[
+    {ru:"вариант понимает образное выражение слишком буквально",en:"the option interprets a figurative expression too literally"},
+    {ru:"вариант меняет знак события на противоположный (успех вместо провала)",en:"the option flips the event to the opposite (success instead of failure)"},
+    {ru:"вариант описывает только часть заголовка, игнорируя вторую половину",en:"the option covers only half of the headline, ignoring the other part"},
+    {ru:"вариант слишком широк и подошёл бы почти к любой похожей новости",en:"the option is so generic it could fit almost any similar news item"}
+  ],
+  solvingStrategy:[
+    {ru:"Разбейте заголовок на смысловые части.",en:"Break the headline into its meaningful parts."},
+    {ru:"Определите, есть ли образное выражение, и раскройте его смысл.",en:"Check for a figurative expression and decode its meaning."},
+    {ru:"Определите общий знак новости: позитивная, негативная, нейтральная.",en:"Determine the overall tone: positive, negative, or neutral."},
+    {ru:"Сопоставьте обе части заголовка с вариантом — обе должны быть отражены.",en:"Match both parts of the headline to the option — both must be reflected."}
+  ],
+  commonMistakes:[
+    {ru:"переводят образное выражение буквально, не понимая его смысла",en:"translating a figurative expression literally without grasping its meaning"},
+    {ru:"не замечают смену знака (позитив/негатив) между заголовком и вариантом",en:"missing a flip in tone between the headline and the option"},
+    {ru:"выбирают вариант, отражающий только половину заголовка",en:"picking an option that reflects only half the headline"}
+  ],
+  checklist:[
+    {ru:"Я разобрал(а) образное выражение в заголовке",en:"I decoded the figurative expression in the headline"},
+    {ru:"Я определил(а) общий знак новости",en:"I determined the overall tone of the news"},
+    {ru:"Я проверил(а), что вариант отражает ОБЕ части заголовка",en:"I checked that the option reflects BOTH parts of the headline"},
+    {ru:"Я исключил(а) слишком общие или буквальные варианты",en:"I eliminated overly generic or overly literal options"}
+  ],
+  exampleQuestion:{
+    text:{kr:"TV 프로그램 방영 효과 '톡톡', 인주시는 관광객 물결",ru:"Эффект от показа ТВ-программы «на высоте», в город Инджу — волна туристов",en:"TV show's effect is a real \"hit\" — a wave of tourists in Inju city"},
+    options:[
+      {ru:"Создатели ТВ-программы приехали в Инджу снимать туристов",en:"The show's creators came to Inju to film tourists"},
+      {ru:"Благодаря показу по ТВ в Инджу приезжает много туристов",en:"Thanks to the TV broadcast, many tourists are visiting Inju"},
+      {ru:"Город Инджу готовит рекламный ролик для привлечения туристов",en:"Inju city is preparing a promo video to attract tourists"},
+      {ru:"После показа программы в городе возникли проблемы из-за туристов",en:"After the broadcast, tourist-related problems arose in the city"}
+    ],
+    correctIndex:1,
+    explanation:{ru:"«효과 톡톡» — образное выражение «эффект реально сработал», «관광객 물결» — «волна туристов». Вместе это значит: показ по ТВ вызвал приток туристов.",
+      en:"\"Effect is a hit\" is figurative for \"it really worked\"; \"wave of tourists\" means a surge of visitors. Together: the broadcast caused a tourist influx."},
+    whyOthersWrong:{ru:"Заголовок не про съёмки туристов, не про подготовку рекламы и не про проблемы — только про положительный эффект от показа программы.",
+      en:"The headline isn't about filming tourists, preparing an ad, or problems — only about the positive effect of the broadcast."},
+    strategyUsed:{ru:"Разбор двух образных частей заголовка по отдельности и их объединение в один точный смысл.",
+      en:"Decoding the two figurative parts of the headline separately, then combining them into one precise meaning."}
+  },
+  miniPractice:[
+    {q:{ru:"«물가 비상» — это про рост или про падение цен?",en:"\"Price alarm\" — is it about rising or falling prices?"},
+      opts:[{ru:"Рост (проблема)",en:"Rising (a problem)",correct:true},{ru:"Падение",en:"Falling",correct:false}]},
+    {q:{ru:"«훈풍이 분다» несёт позитивный или негативный оттенок?",en:"Does \"a warm wind is blowing\" carry a positive or negative tone?"},
+      opts:[{ru:"Позитивный",en:"Positive",correct:true},{ru:"Негативный",en:"Negative",correct:false}]},
+    {q:{ru:"Нужно ли переводить заголовок буквально слово в слово?",en:"Should a headline be translated literally, word for word?"},
+      opts:[{ru:"Да",en:"Yes",correct:false},{ru:"Нет, нужно понять образный смысл",en:"No, decode the figurative meaning instead",correct:true}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:[]
+},
+
+"reading_sentence_insert": {
+  id:"reading_sentence_insert", section:"reading", questionRange:"문장 삽입",
+  title:{ru:"Вставка предложения в текст", en:"Inserting a Sentence into the Text", ko:"주어진 문장이 들어갈 곳 고르기"},
+  objective:{ru:"Проверяется понимание логической структуры текста и способность определить, куда именно вписывается данное отдельное предложение.",
+    en:"Tests understanding of a text's logical structure and the ability to determine exactly where a given standalone sentence fits."},
+  taskDescription:{ru:"Дано отдельное предложение и текст с четырьмя отмеченными местами (㉠㉡㉢㉣) — определите, куда это предложение логично вписывается.",
+    en:"You're given a standalone sentence and a text with four marked positions — determine where the sentence logically fits."},
+  focusPoint:{ru:"Сначала разберите, что именно связывает данное предложение с окружающим текстом: причину, следствие, пример, противопоставление или уточнение.",
+    en:"First work out what links the given sentence to its surroundings: a cause, a result, an example, a contrast, or a clarification."},
+  focusNote:{ru:"Прочитайте предложения ДО и ПОСЛЕ каждой отметки — вставленное предложение должно логично соединять именно их, не разрывая смысл.",
+    en:"Read the sentences BEFORE and AFTER each marked position — the inserted sentence must logically bridge exactly those two, without breaking the flow."},
+  commonContexts:[],
+  relationshipTypes:[],
+  speechFunctions:[],
+  signalWords:[
+    {kr:"그래서/그 결과",ru:"поэтому, в результате",en:"so, as a result",function:{ru:"вставляемое предложение — следствие предыдущего",en:"the inserted sentence is a result of the previous one"},example:{kr:"그래서 이용자가 늘었다.",ru:"Поэтому число пользователей выросло.",en:"So the number of users increased."}},
+    {kr:"이처럼/이렇게",ru:"таким образом, вот так",en:"in this way",function:{ru:"вставляемое предложение подводит итог предыдущему",en:"the inserted sentence sums up the previous one"},example:{kr:"이처럼 노력이 중요하다.",ru:"Вот так важны усилия.",en:"In this way, effort matters."}},
+    {kr:"하지만/반면",ru:"но, с другой стороны",en:"but, on the other hand",function:{ru:"вставляемое предложение противопоставлено предыдущему",en:"the inserted sentence contrasts with the previous one"},example:{kr:"하지만 한계도 있다.",ru:"Но есть и ограничения.",en:"But there are also limits."}}
+  ],
+  traps:[
+    {ru:"предложение грамматически подходит в двух местах, но логически — только в одном",en:"the sentence grammatically fits two spots, but only one is logically correct"},
+    {ru:"место выбрано без проверки предложения ПОСЛЕ отметки",en:"the position is picked without checking the sentence that comes right after it"},
+    {ru:"перепутана связь причины и следствия",en:"a cause-effect relationship is mixed up"},
+    {ru:"проигнорировано указательное слово («이러한», «그것») внутри вставляемого предложения",en:"a demonstrative word inside the inserted sentence (\"this\", \"that\") is ignored"}
+  ],
+  solvingStrategy:[
+    {ru:"Прочитайте данное предложение и определите его тип связи (причина/итог/противопоставление/пример).",en:"Read the given sentence and identify its type of connection (cause/summary/contrast/example)."},
+    {ru:"Найдите в нём указательные слова («이, 그, 이러한») — они подскажут, на что оно ссылается.",en:"Look for demonstrative words in it — they hint at what it refers to."},
+    {ru:"Проверьте каждую отметку: подходит ли предложение и после ДО, и перед ПОСЛЕ.",en:"Check each marker: does the sentence fit both after the \"before\" and before the \"after\"?"},
+    {ru:"Прочитайте весь текст с вставленным предложением целиком — он должен звучать связно.",en:"Read the whole text with the sentence inserted — it should sound coherent."}
+  ],
+  commonMistakes:[
+    {ru:"проверяют только предложение до отметки, забывая про предложение после",en:"checking only the sentence before the marker and forgetting the one after"},
+    {ru:"игнорируют указательные слова во вставляемом предложении",en:"ignoring demonstrative words in the given sentence"},
+    {ru:"не перечитывают итоговый текст целиком для проверки связности",en:"not rereading the final text as a whole to confirm coherence"}
+  ],
+  checklist:[
+    {ru:"Я определил(а) тип связи вставляемого предложения",en:"I identified the type of connection in the given sentence"},
+    {ru:"Я нашёл(нашла) указательные слова в нём",en:"I found the demonstrative words in it"},
+    {ru:"Я проверил(а) и «до», и «после» каждой отметки",en:"I checked both \"before\" and \"after\" for each marker"},
+    {ru:"Я перечитал(а) итоговый текст целиком",en:"I reread the final text as a whole"}
+  ],
+  exampleQuestion:{
+    situation:{ru:"Дано предложение и текст о спортсменах после карьеры",en:"A given sentence and a text about athletes after retirement"},
+    text:{kr:"운동선수들의 평균 은퇴 연령은 23.6세로 매우 짧은 편이다. (㉠) 그래서 지도자의 길을 걷는 소수의 선수를 제외하면 대부분의 선수들은 은퇴 후 새로운 직업을 찾아야 한다. (㉡) 하지만 선수들은 오랜 시간 운동에만 매진해 왔기 때문에 개개인이 은퇴 이후의 삶을 준비할 여력이 없다. (㉢) 이에 현역부터 선수들에게 직업 교육 등을 지원하는 구단이 많아지고 있다. (㉣)",
+      ru:"Средний возраст выхода на пенсию у спортсменов — 23,6 года, это очень рано. (㉠) Поэтому, за исключением немногих, кто становится тренером, большинству спортсменов приходится искать новую профессию после ухода из спорта. (㉡) Однако спортсмены долгое время посвящали себя только тренировкам, и у них нет возможности подготовиться к жизни после карьеры. (㉢) В связи с этим всё больше клубов поддерживают спортсменов профессиональным обучением ещё во время активной карьеры. (㉣)",
+      en:"The average retirement age for athletes is 23.6, which is very young. (A) So, apart from the few who become coaches, most athletes must find a new career after retiring. (B) However, since athletes devote themselves solely to training for so long, individuals have no capacity to prepare for life after retirement. (C) In response, more clubs are supporting athletes with vocational training even during their active careers. (D)"},
+    givenSentence:{kr:"사회적으로도 이들을 위한 재교육의 장이 충분히 마련되어 있지 않다.",ru:"К тому же в обществе тоже недостаточно развита система переподготовки для таких людей.",en:"On top of that, society hasn't developed enough retraining opportunities for them either."},
+    options:[{ru:"㉠",en:"A"},{ru:"㉡",en:"B"},{ru:"㉢",en:"C"},{ru:"㉣",en:"D"}],
+    correctIndex:2,
+    explanation:{ru:"Данное предложение добавляет ЕЩЁ ОДНУ причину трудностей («к тому же…») к уже названной в (㉡) — отсутствию личной подготовки. После вставки логично идёт «в связи с этим клубы поддерживают» (㉢).",
+      en:"The given sentence adds ANOTHER reason (\"on top of that\") to the one just given in (B) — lack of personal preparation. After inserting it, \"in response, clubs are supporting...\" (C) follows logically."},
+    whyOthersWrong:{ru:"На месте (㉠) предложение разрывает переход от «короткая карьера» к «поэтому нужна новая профессия». На месте (㉡) оно противоречит слову «하지만», которое уже вводит контраст. На месте (㉣) после него не остаётся текста, к которому можно логично привязать «이에».",
+      en:"At (A) it breaks the flow from \"short career\" to \"so a new career is needed\". At (B) it conflicts with \"however\", which is already the contrast marker. At (D) nothing follows to which \"in response\" could logically attach."},
+    strategyUsed:{ru:"Определение типа связи («к тому же» = дополнительная причина) и проверка предложений до и после каждой отметки точно указали место (㉢).",
+      en:"Identifying the connection type (\"on top of that\" = an additional reason) and checking before/after each marker pinpointed position (C)."}
+  },
+  miniPractice:[
+    {q:{ru:"Слово «이처럼» в начале предложения сигнализирует, что оно…",en:"A sentence starting with \"in this way\" signals that it…"},
+      opts:[{ru:"Подводит итог предыдущему",en:"Sums up what came before",correct:true},{ru:"Начинает новую тему",en:"Starts a new topic",correct:false}]},
+    {q:{ru:"Нужно ли проверять предложение и до, и после отметки?",en:"Should you check both before and after the marker?"},
+      opts:[{ru:"Да, оба",en:"Yes, both",correct:true},{ru:"Достаточно одного",en:"Just one is enough",correct:false}]},
+    {q:{ru:"«그래서» вводит…",en:"\"So/therefore\" introduces…"},
+      opts:[{ru:"Следствие",en:"A result",correct:true},{ru:"Противопоставление",en:"A contrast",correct:false}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["V(으)ㅁ으로(써), N(으)로(써)","A/V-거나"]
+},
+
+"writing_51_52": {
+  id:"writing_51_52", section:"writing", questionRange:"51–52",
+  title:{ru:"Заполнение пропусков в практическом тексте", en:"Filling Gaps in a Practical Text", ko:"실용문 빈칸 채우기"},
+  objective:{ru:"Проверяется умение писать грамматически и стилистически уместные фразы для завершения практического текста (объявления, письма, инструкции).",
+    en:"Tests the ability to write grammatically and stylistically appropriate phrases to complete a practical text (a notice, a letter, an instruction)."},
+  taskDescription:{ru:"Прочитайте практический текст с двумя пропусками (обычно объявление, приглашение или деловое письмо) и впишите подходящие фразы своими словами.",
+    en:"Read a practical text with two blanks (usually a notice, invitation, or business letter) and write in suitable phrases in your own words."},
+  focusPoint:{ru:"Определите тип текста и его формальный уровень вежливости. Оба пропуска обычно связаны с уже данной информацией до или после них — не придумывайте новые факты.",
+    en:"Identify the type of text and its formality level. Both blanks are usually tied to information already given nearby — don't invent new facts."},
+  focusNote:{ru:"Оценивается не оригинальность, а точность: грамматика, соответствие контексту и завершённость мысли. Короткая, но точная фраза лучше длинной с ошибкой.",
+    en:"What's graded isn't originality but accuracy: grammar, fit with context, and a complete thought. A short accurate phrase beats a long one with mistakes."},
+  commonContexts:[{ru:"объявление",en:"notice"},{ru:"приглашение",en:"invitation"},{ru:"деловое письмо",en:"business letter"},{ru:"инструкция",en:"instructions"}],
+  relationshipTypes:[],
+  speechFunctions:[{ko:"안내",ru:"информирование",en:"informing"},{ko:"요청",ru:"просьба",en:"requesting"},{ko:"사과",ru:"извинение",en:"apologizing"}],
+  signalWords:[
+    {kr:"-아/어 주시기 바랍니다",ru:"просим сделать (вежливо)",en:"please kindly (do)",function:{ru:"формальная просьба в объявлении",en:"a formal request in a notice"},example:{kr:"미리 신청해 주시기 바랍니다.",ru:"Просим подать заявку заранее.",en:"Please apply in advance."}},
+    {kr:"-(으)ㄹ 예정입니다",ru:"планируется, что...",en:"is planned/scheduled to",function:{ru:"формальное объявление о будущем событии",en:"a formal statement about a future event"},example:{kr:"다음 주에 진행될 예정입니다.",ru:"Планируется провести на следующей неделе.",en:"It is scheduled for next week."}},
+    {kr:"불편을 드려 죄송합니다",ru:"извините за неудобство",en:"we apologize for the inconvenience",function:{ru:"формальное извинение",en:"a formal apology"},example:{kr:"공사로 인한 불편을 드려 죄송합니다.",ru:"Извините за неудобство, вызванное ремонтом.",en:"We apologize for the inconvenience caused by the construction."}}
+  ],
+  traps:[
+    {ru:"фраза отвечает не на тот вопрос, что задан контекстом (например, не «когда», а «где»)",en:"the phrase answers the wrong question (e.g., \"where\" instead of \"when\")"},
+    {ru:"уровень вежливости не соответствует формальному тексту",en:"the politeness level doesn't fit a formal document"},
+    {ru:"пропуск заполнен слишком общей фразой без конкретной информации",en:"the blank is filled with something too vague, lacking concrete information"}
+  ],
+  solvingStrategy:[
+    {ru:"Определите тип текста и адресата (кому пишут).",en:"Identify the text type and the addressee."},
+    {ru:"Прочитайте предложения до и после каждого пропуска — они задают, что там должно быть.",en:"Read the sentences before and after each blank — they dictate what belongs there."},
+    {ru:"Пишите короткими, грамматически завершёнными фразами в нужном стиле вежливости.",en:"Write short, grammatically complete phrases in the required politeness register."},
+    {ru:"Перечитайте текст целиком после заполнения — он должен звучать связно.",en:"Reread the whole text after filling it in — it should read coherently."}
+  ],
+  commonMistakes:[
+    {ru:"используют разговорный стиль в формальном объявлении",en:"using casual style in a formal notice"},
+    {ru:"придумывают факты, которых нет в остальном тексте",en:"inventing facts not present elsewhere in the text"},
+    {ru:"оставляют пропуск грамматически незавершённым",en:"leaving the blank grammatically incomplete"}
+  ],
+  checklist:[
+    {ru:"Я определил(а) тип текста и уровень вежливости",en:"I identified the text type and politeness level"},
+    {ru:"Мой ответ логично связан с контекстом до и после",en:"My answer logically connects with the context before and after"},
+    {ru:"Фраза грамматически завершена",en:"The phrase is grammatically complete"},
+    {ru:"Я перечитал(а) весь текст целиком",en:"I reread the whole text"}
+  ],
+  exampleQuestion:{
+    text:{kr:"안녕하세요. 다음 주 월요일부터 도서관 공사가 진행됩니다. 공사 기간 동안 열람실을 ( ㉠ ). 이용에 ( ㉡ ) 죄송합니다.",
+      ru:"Здравствуйте. Со следующего понедельника в библиотеке начнётся ремонт. В период ремонта читальный зал ( ㉠ ). Приносим извинения за ( ㉡ ), связанные с этим.",
+      en:"Hello. Starting next Monday, library renovation work will begin. During the renovation, the reading room ( A ). We apologize for the ( B ) this may cause."},
+    options:[],
+    correctIndex:null,
+    explanation:{ru:"㉠ логично: «이용하실 수 없습니다» (пользоваться будет нельзя) — так как далее идёт извинение. ㉡ логично: «불편을 드려» (за неудобство) — стандартная формула извинения.",
+      en:"Blank A logically needs \"cannot be used\" — since an apology follows. Blank B logically needs \"the inconvenience\" — the standard apology formula."},
+    whyOthersWrong:{ru:"Любой ответ, не связанный с закрытием зала на ремонт или не завершающий формулу извинения, разрывает логику письма.",
+      en:"Any answer unrelated to the room's closure for renovation, or that doesn't complete the apology formula, breaks the letter's logic."},
+    strategyUsed:{ru:"Опора на соседние предложения («ремонт» до, «извините» после) точно подсказала содержание обоих пропусков.",
+      en:"Relying on the neighboring sentences (\"renovation\" before, \"apologize\" after) pinned down the content of both blanks."}
+  },
+  miniPractice:[
+    {q:{ru:"Формальный текст требует стиля -아/어요 или -습니다?",en:"Does a formal text require the -아/어요 or -습니다 style?"},
+      opts:[{ru:"-습니다",en:"-습니다 (formal)",correct:true},{ru:"-아/어요",en:"-아/어요 (casual-polite)",correct:false}]},
+    {q:{ru:"Можно ли добавлять факты, не упомянутые в тексте?",en:"Can you add facts not mentioned in the text?"},
+      opts:[{ru:"Да",en:"Yes",correct:false},{ru:"Нет, нужно опираться на данный текст",en:"No, stick to what's given",correct:true}]},
+    {q:{ru:"Что важнее: длина фразы или грамматическая точность?",en:"What matters more: length or grammatical accuracy?"},
+      opts:[{ru:"Длина",en:"Length",correct:false},{ru:"Точность",en:"Accuracy",correct:true}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["V-기 바라다","A/V-아/어서는 안 되다"]
+},
+
+"writing_53": {
+  id:"writing_53", section:"writing", questionRange:"53",
+  title:{ru:"Описание графика или диаграммы", en:"Describing a Graph or Chart", ko:"자료 분석하여 설명하는 글쓰기"},
+  objective:{ru:"Проверяется умение объективно описать статистические данные (график, диаграмма, таблица) связным официальным текстом объёмом 200–300 знаков.",
+    en:"Tests the ability to objectively describe statistical data (a graph, chart, or table) in a coherent, formal 200–300 character text."},
+  taskDescription:{ru:"На основе представленных данных (график изменения показателя, сравнительная диаграмма, причины/прогноз) напишите связное описание, не выражая личного мнения.",
+    en:"Based on the given data (a trend graph, comparison chart, causes/forecast), write a coherent description without expressing personal opinion."},
+  focusPoint:{ru:"Опишите данные по порядку: общий тренд → детали по каждому пункту → сравнение величин → (если есть) причины или прогноз. Не добавляйте оценок «хорошо/плохо».",
+    en:"Describe the data in order: overall trend → details per item → comparison of values → (if given) causes or forecast. Don't add judgments like \"good/bad\"."},
+  focusNote:{ru:"Это не творческое эссе — только объективное изложение данных официальным стилем -다/-았다/-였다. Личное мнение здесь — ошибка, а не плюс.",
+    en:"This is not a creative essay — only an objective account of the data in formal written style. Personal opinion here is a mistake, not a bonus."},
+  commonContexts:[{ru:"опрос населения",en:"a public survey"},{ru:"статистика продаж",en:"sales statistics"},{ru:"демографические данные",en:"demographic data"},{ru:"динамика показателя за годы",en:"a yearly trend"}],
+  relationshipTypes:[],
+  speechFunctions:[{ko:"묘사",ru:"объективное описание данных",en:"objective data description"},{ko:"비교",ru:"сравнение величин",en:"comparing values"},{ko:"전망",ru:"прогноз",en:"forecasting"}],
+  signalWords:[
+    {kr:"-(으)로 나타났다",ru:"было показано, что...",en:"it was shown that",function:{ru:"вводит статистический факт",en:"introduces a statistical fact"},example:{kr:"1위로 나타났다.",ru:"Оказалось на первом месте.",en:"It came out on top."}},
+    {kr:"이/가 -았/었던 것에 비해",ru:"по сравнению с тем, что было...",en:"compared to when it was...",function:{ru:"вводит сравнение с прошлым периодом",en:"introduces a comparison with a past period"},example:{kr:"작년에 비해 늘었다.",ru:"По сравнению с прошлым годом выросло.",en:"It increased compared to last year."}},
+    {kr:"-(으)ㄹ 것으로 예상된다/전망된다",ru:"ожидается, что...",en:"it is expected/forecast that",function:{ru:"вводит прогноз в конце текста",en:"introduces a forecast at the end"},example:{kr:"계속 증가할 것으로 전망된다.",ru:"Ожидается, что рост продолжится.",en:"It is forecast to keep increasing."}}
+  ],
+  traps:[
+    {ru:"текст скатывается в личное мнение («это хорошо», «я думаю»)",en:"the text slips into personal opinion (\"this is good\", \"I think\")"},
+    {ru:"данные перечислены не по порядку, без общей структуры",en:"the data is listed out of order, with no overall structure"},
+    {ru:"пропущена часть данных (например, только тренд без причин, хотя они даны)",en:"part of the data is skipped (e.g., only the trend, no causes, even though given)"},
+    {ru:"используется разговорный стиль -아/어요 вместо официального -다",en:"casual style is used instead of the required formal written style"}
+  ],
+  solvingStrategy:[
+    {ru:"Определите тип данных: тренд во времени, сравнение категорий, причины, прогноз.",en:"Identify the data type: a trend over time, a category comparison, causes, or a forecast."},
+    {ru:"Составьте план: вступление с темой опроса/графика → основные данные по порядку → (если есть) причины → (если есть) прогноз.",en:"Outline: intro naming the survey/graph → main data in order → causes (if given) → forecast (if given)."},
+    {ru:"Используйте официальный стиль -다/-았다 и слова-связки для чисел («가장 많다», «그 다음으로»).",en:"Use the formal written style and connector words for numbers (\"the most\", \"next\")."},
+    {ru:"Не добавляйте личное мнение или оценку — только факты из данных.",en:"Don't add personal opinion or evaluation — only facts from the data."},
+    {ru:"Проверьте объём — 200–300 знаков (не меньше, не сильно больше).",en:"Check the length — 200–300 characters (not less, not much more)."}
+  ],
+  commonMistakes:[
+    {ru:"пишут «저는 ~라고 생각합니다» — личное мнение недопустимо",en:"writing \"I think...\" — personal opinion is not allowed here"},
+    {ru:"забывают упомянуть одну из частей данных (например, прогноз)",en:"forgetting to mention one part of the data (e.g., the forecast)"},
+    {ru:"используют слишком простую грамматику, не показывая владение конструкциями сравнения",en:"using overly simple grammar without demonstrating comparison structures"}
+  ],
+  checklist:[
+    {ru:"Я упомянул(а) все части данных без пропусков",en:"I covered every part of the data with nothing missing"},
+    {ru:"Текст написан в официальном стиле -다, без личного мнения",en:"The text is in formal written style, with no personal opinion"},
+    {ru:"Данные описаны по порядку с логичными связками",en:"The data is described in order with logical connectors"},
+    {ru:"Объём — примерно 200–300 знаков",en:"The length is around 200–300 characters"}
+  ],
+  exampleQuestion:{
+    situation:{ru:"Диаграмма: «Причины стресса у офисных работников» — 업무량 45%, 인간관계 30%, 급여 15%, 기타 10%",
+      en:"Chart: \"Causes of stress among office workers\" — workload 45%, relationships 30%, salary 15%, other 10%"},
+    text:{kr:"(모범 답안 요약) 한 설문 조사에 따르면 직장인 스트레스의 원인은 업무량이 45%로 가장 높게 나타났다. 그다음으로 인간관계가 30%, 급여가 15%로 뒤를 이었으며 기타 응답이 10%를 차지했다.",
+      ru:"(сокращённый образец) Согласно опросу, главной причиной стресса офисных работников оказалась рабочая нагрузка — 45%. Далее следуют межличностные отношения (30%) и зарплата (15%), на прочие причины пришлось 10%.",
+      en:"(sample excerpt) According to a survey, workload was the top cause of office workers' stress at 45%. It was followed by relationships (30%) and salary (15%), with other reasons accounting for 10%."},
+    options:[],correctIndex:null,
+    explanation:{ru:"Текст строго объективен: только цифры и порядок, никаких оценок вроде «это плохо». Использована формула сравнения «가장 높게 나타났다» и «그다음으로».",
+      en:"The text is strictly objective: only numbers and order, no evaluation like \"this is bad\". It uses the comparison formulas \"came out highest\" and \"next\"."},
+    whyOthersWrong:{ru:"Вариант с фразой «нужно что-то делать с нагрузкой» был бы ошибкой — это личное мнение, которое не должно быть в этом типе задания.",
+      en:"A version saying \"something should be done about workload\" would be wrong — that's personal opinion, which doesn't belong in this task type."},
+    strategyUsed:{ru:"Строгое следование порядку данных от наибольшего к наименьшему значению и использование официальных связок для чисел.",
+      en:"Strictly following the data order from largest to smallest value and using formal connectors for numbers."}
+  },
+  miniPractice:[
+    {q:{ru:"Допустимо ли писать «저는 이 결과가 놀랍다고 생각합니다» в описании графика?",en:"Is it OK to write \"I find this result surprising\" in a graph description?"},
+      opts:[{ru:"Да",en:"Yes",correct:false},{ru:"Нет, это личное мнение",en:"No, that's personal opinion",correct:true}]},
+    {q:{ru:"Какой стиль нужен: -아/어요 или -다?",en:"Which style is required: casual-polite or formal written?"},
+      opts:[{ru:"-아/어요",en:"casual-polite",correct:false},{ru:"-다 (официальный письменный)",en:"formal written",correct:true}]},
+    {q:{ru:"Нужно ли упомянуть прогноз, если он есть в данных?",en:"Should you mention the forecast if it's part of the given data?"},
+      opts:[{ru:"Да, обязательно",en:"Yes, definitely",correct:true},{ru:"Можно пропустить",en:"It can be skipped",correct:false}]}
+  ],
+  recommendedVocabulary:["차지하다","뒤를 잇다","비율","증가하다","감소하다"],
+  recommendedGrammar:["N에 비해(서)","A/V-(으)ㄹ 것으로 예상되다"]
+},
+
+"writing_54": {
+  id:"writing_54", section:"writing", questionRange:"54",
+  title:{ru:"Аргументированное эссе", en:"Argumentative Essay", ko:"주제에 대한 자신의 생각을 쓰는 글"},
+  objective:{ru:"Проверяется умение выстроить логичное аргументированное эссе на общественную тему объёмом 600–700 знаков с чёткой структурой введение–основная часть–заключение.",
+    en:"Tests the ability to write a logically structured 600–700 character argumentative essay on a social topic, with a clear intro–body–conclusion structure."},
+  taskDescription:{ru:"Прочитайте тему и вопросы-подсказки, сформулируйте свою позицию и обоснуйте её минимум двумя аргументами с примерами.",
+    en:"Read the topic and guiding questions, state your position, and support it with at least two arguments with examples."},
+  focusPoint:{ru:"Отвечайте на ВСЕ подвопросы задания — пропуск одного из них снижает оценку, даже если остальной текст хорош. Каждый аргумент подкрепляйте конкретным примером.",
+    en:"Answer ALL the sub-questions in the prompt — skipping one lowers your score even if the rest is strong. Back every argument with a concrete example."},
+  focusNote:{ru:"Структура важнее красоты слога: чёткое введение с тезисом, 2 аргумента с примерами, заключение с выводом — это база, на которую накладывается грамматика и лексика уровня 고급.",
+    en:"Structure matters more than eloquence: a clear thesis intro, two arguments with examples, and a concluding summary — that's the baseline onto which advanced-level grammar and vocabulary are layered."},
+  commonContexts:[{ru:"образование",en:"education"},{ru:"технологии и общество",en:"technology and society"},{ru:"работа и карьера",en:"work and career"},{ru:"экология",en:"environment"},{ru:"межпоколенческие различия",en:"generational differences"}],
+  relationshipTypes:[],
+  speechFunctions:[{ko:"주장",ru:"утверждение позиции",en:"stating a position"},{ko:"근거 제시",ru:"обоснование аргументом",en:"providing supporting evidence"},{ko:"예시",ru:"пример",en:"giving an example"},{ko:"결론",ru:"вывод",en:"concluding"}],
+  signalWords:[
+    {kr:"먼저 / 첫째",ru:"во-первых",en:"firstly",function:{ru:"вводит первый аргумент",en:"introduces the first argument"},example:{kr:"첫째, 시간을 절약할 수 있다.",ru:"Во-первых, это экономит время.",en:"Firstly, it saves time."}},
+    {kr:"또한 / 둘째",ru:"кроме того, во-вторых",en:"also, secondly",function:{ru:"вводит второй аргумент",en:"introduces the second argument"},example:{kr:"둘째, 비용도 줄일 수 있다.",ru:"Во-вторых, можно сократить расходы.",en:"Secondly, costs can be reduced."}},
+    {kr:"예를 들어",ru:"например",en:"for example",function:{ru:"вводит конкретный пример к аргументу",en:"introduces a concrete example for the argument"},example:{kr:"예를 들어 재택근무가 그렇다.",ru:"Например, удалённая работа — тому пример.",en:"Remote work, for example, is a case of this."}},
+    {kr:"따라서 / 결론적으로",ru:"поэтому, в заключение",en:"therefore, in conclusion",function:{ru:"вводит итоговый вывод",en:"introduces the concluding summary"},example:{kr:"결론적으로 균형이 중요하다.",ru:"В заключение, важен баланс.",en:"In conclusion, balance is important."}}
+  ],
+  traps:[
+    {ru:"отвечают не на все подвопросы задания",en:"not answering every sub-question in the prompt"},
+    {ru:"аргумент дан без конкретного примера",en:"giving an argument with no concrete example"},
+    {ru:"эссе без чёткой структуры введение–основная часть–заключение",en:"the essay lacks a clear intro–body–conclusion structure"},
+    {ru:"используется разговорный стиль -아/어요 вместо официального -다",en:"casual style is used instead of the required formal written style"},
+    {ru:"позиция меняется по ходу текста без объяснения",en:"the stated position shifts partway through without explanation"}
+  ],
+  solvingStrategy:[
+    {ru:"Выпишите все подвопросы задания — они и есть план вашего эссе.",en:"List every sub-question in the prompt — they form your essay's outline."},
+    {ru:"Сформулируйте чёткий тезис в введении.",en:"State a clear thesis in the introduction."},
+    {ru:"Дайте минимум 2 аргумента, каждый — с отдельным примером.",en:"Give at least two arguments, each backed by its own example."},
+    {ru:"Используйте связки «첫째/둘째/예를 들어/따라서» для ясной структуры.",en:"Use connectors like \"firstly/secondly/for example/therefore\" for a clear structure."},
+    {ru:"Завершите коротким выводом, который перекликается с тезисом.",en:"End with a short conclusion that echoes the thesis."},
+    {ru:"Проверьте объём — 600–700 знаков — и официальный стиль.",en:"Check the length — 600–700 characters — and the formal register."}
+  ],
+  commonMistakes:[
+    {ru:"пишут длинное вступление, но забывают про заключение",en:"writing a long intro but forgetting the conclusion"},
+    {ru:"дают только один аргумент вместо двух",en:"giving only one argument instead of two"},
+    {ru:"аргумент остаётся абстрактным без примера",en:"leaving the argument abstract, with no example"},
+    {ru:"смешивают разговорный и официальный стиль в одном тексте",en:"mixing casual and formal style within the same text"}
+  ],
+  checklist:[
+    {ru:"Я ответил(а) на все подвопросы задания",en:"I answered every sub-question in the prompt"},
+    {ru:"У меня есть чёткий тезис во введении",en:"I have a clear thesis in the introduction"},
+    {ru:"У меня минимум 2 аргумента, каждый с примером",en:"I have at least 2 arguments, each with an example"},
+    {ru:"Есть заключение, перекликающееся с тезисом",en:"There's a conclusion that echoes the thesis"},
+    {ru:"Весь текст выдержан в официальном стиле -다",en:"The whole text is in the formal written style"}
+  ],
+  exampleQuestion:{
+    situation:{ru:"Тема: «Влияние технологий на общение между людьми». Подвопросы: 1) Как технологии изменили общение? 2) Какие есть плюсы? 3) Какие есть минусы? 4) Ваше мнение о балансе.",
+      en:"Topic: \"The impact of technology on human communication\". Sub-questions: 1) How has technology changed communication? 2) What are the benefits? 3) What are the drawbacks? 4) Your view on finding balance."},
+    text:{kr:"(모범 답안 개요) 서론: 기술 발전으로 의사소통 방식이 크게 변화했다. 본론1(장점): 첫째, 거리에 상관없이 즉시 연락할 수 있다. 예를 들어 화상 통화로 해외에 있는 가족과도 매일 대화할 수 있다. 본론2(단점): 둘째, 반면 직접 만나는 대화가 줄어들면서 관계가 피상적으로 변할 수 있다. 예를 들어 문자로만 소통하다 보면 감정을 오해하기 쉽다. 결론: 따라서 기술을 활용하되 직접적인 소통도 함께 유지하는 균형이 필요하다.",
+      ru:"(план образца) Введение: развитие технологий сильно изменило способы общения. Часть 1 (плюсы): во-первых, теперь можно связаться мгновенно независимо от расстояния — например, по видеозвонку ежедневно общаться с семьёй за границей. Часть 2 (минусы): во-вторых, при этом сокращение личных встреч может сделать отношения поверхностными — например, общение только текстом легко приводит к недопониманию эмоций. Заключение: поэтому нужен баланс — использовать технологии, но сохранять и живое общение.",
+      en:"(sample outline) Intro: technological progress has greatly changed how we communicate. Body 1 (pros): firstly, you can now connect instantly regardless of distance — for example, daily video calls with family abroad. Body 2 (cons): secondly, however, fewer face-to-face meetings can make relationships feel superficial — for example, text-only communication easily leads to misreading emotions. Conclusion: therefore, a balance is needed — using technology while still maintaining direct communication."},
+    options:[],correctIndex:null,
+    explanation:{ru:"Эссе отвечает на все 4 подвопроса, даёт по одному конкретному примеру на каждый аргумент и завершается выводом, перекликающимся с темой баланса.",
+      en:"The essay answers all 4 sub-questions, gives one concrete example per argument, and ends with a conclusion echoing the theme of balance."},
+    whyOthersWrong:{ru:"Эссе без примеров («технологии полезны и вредны») получило бы низкую оценку — это утверждение без обоснования, которое не подтверждено конкретными случаями.",
+      en:"An essay with no examples (\"technology is both useful and harmful\") would score low — that's an unsupported claim, not backed by concrete cases."},
+    strategyUsed:{ru:"Использование подвопросов задания как готового плана и обязательное подкрепление каждого аргумента примером.",
+      en:"Using the prompt's sub-questions as a ready-made outline and backing every argument with a required example."}
+  },
+  miniPractice:[
+    {q:{ru:"Сколько минимум аргументов нужно для эссе 54?",en:"How many arguments are minimally required for essay 54?"},
+      opts:[{ru:"1",en:"1",correct:false},{ru:"2",en:"2",correct:true}]},
+    {q:{ru:"Нужен ли пример к каждому аргументу?",en:"Does every argument need an example?"},
+      opts:[{ru:"Да",en:"Yes",correct:true},{ru:"Не обязательно",en:"Not necessarily",correct:false}]},
+    {q:{ru:"Какой стиль обязателен для эссе 54?",en:"Which style is required for essay 54?"},
+      opts:[{ru:"Официальный -다",en:"Formal written",correct:true},{ru:"Разговорный -아/어요",en:"Casual-polite",correct:false}]}
+  ],
+  recommendedVocabulary:[],
+  recommendedGrammar:["A/V-(으)ㄹ 뿐만 아니라","A-(으)ㄴ 반면에, V-는 반면에"]
+}
+
+};
+
+const QTA_ORDER=["listening_1_3","listening_4_8","listening_9_12","listening_13_16",
+  "reading_fill_blank","reading_vocab_grammar","reading_order","reading_main_idea","reading_content_match","reading_title","reading_sentence_insert",
+  "writing_51_52","writing_53","writing_54"];
+
+// Map a lesson's question-number block (e.g. "듣기 1~3 문제") to a QTA id.
+const QTA_BLOCK_MAP={
+  "듣기 1~3 문제":"listening_1_3", "듣기 4~8 문제":"listening_4_8",
+  "듣기 9~12 문제":"listening_9_12", "듣기 13~16 문제":"listening_13_16",
+  "읽기 1~2 문제":"reading_fill_blank", "읽기 3~4 문제":"reading_vocab_grammar",
+  "읽기 5~8 문제":"reading_fill_blank", "읽기 9~12 문제":"reading_fill_blank",
+  "읽기 13~15 문제":"reading_main_idea", "읽기 16~18 문제":"reading_order",
+  "읽기 19~20 문제":"reading_sentence_insert", "읽기 21~22 문제":"reading_content_match",
+  "읽기 23~24 문제":"reading_content_match", "읽기 28~31 문제":"reading_main_idea",
+  "읽기 32~34 문제":"reading_content_match", "읽기 35~38문제":"reading_main_idea"
+};
+function getQTAForLesson(lesson){
+  if(!lesson) return null;
+  const id=QTA_BLOCK_MAP[lesson.block];
+  return id?QUESTION_TYPE_ANALYSIS[id]:null;
+}
+
+// ══════════════════════════════════════════════════
+// ── QTA PROGRESS STATE, PERSISTENCE, RENDERING ──
+// ══════════════════════════════════════════════════
+function freshQTAEntry(){
+  return {viewed:false, viewedAt:null, checklist:[], exampleViewed:false, miniPractice:null, mastery:'not_started'};
+}
+function getQTAProgress(id){
+  if(!S.qtaProgress) S.qtaProgress={};
+  if(!S.qtaProgress[id]) S.qtaProgress[id]=freshQTAEntry();
+  return S.qtaProgress[id];
+}
+function computeQTAMastery(entry){
+  if(entry.miniPractice){
+    return entry.miniPractice.pct>=70 ? 'mastered' : 'needs_practice';
+  }
+  if(entry.viewed) return 'strategy_learned';
+  return 'not_started';
+}
+function persistQTAProgress(){
+  try{ localStorage.setItem('t45-qta-progress', JSON.stringify(S.qtaProgress||{})); }catch(e){}
+  save(); queueSave();
+}
+function markQTAViewed(id){
+  const e=getQTAProgress(id);
+  if(!e.viewed){ e.viewed=true; e.viewedAt=new Date().toISOString(); }
+  e.mastery=computeQTAMastery(e);
+  persistQTAProgress();
+}
+function toggleQTAChecklist(id,idx){
+  const e=getQTAProgress(id);
+  e.checklist[idx]=!e.checklist[idx];
+  persistQTAProgress();
+  const el=document.getElementById('qta-chk-'+idx);
+  if(el) el.classList.toggle('checked', !!e.checklist[idx]);
+}
+
+// ── HUB (list of all question-type analyses) ──
+function openQTAHub(){
+  S.page='qtahub';
+  document.getElementById('btn-home').style.display='inline-flex';
+  const en=isJosh();
+  document.getElementById('tb-title').textContent=en?'🎯 Question Type Analysis':'🎯 Анализ типов заданий';
+  document.getElementById('tb-sub').textContent=en?'Strategy for every TOPIK II question type':'Стратегия для каждого типа заданий TOPIK II';
+  buildSidebar();
+  renderQTAHub();
+  window.scrollTo(0,0);
+}
+const QTA_MASTERY_LABEL={
+  ru:{not_started:'Не начат',strategy_learned:'Изучена стратегия',needs_practice:'Нужна практика',mastered:'Освоен',needs_review:'Требуется повторение'},
+  en:{not_started:'Not started',strategy_learned:'Strategy learned',needs_practice:'Needs practice',mastered:'Mastered',needs_review:'Needs review'}
+};
+const QTA_MASTERY_COLOR={not_started:'var(--tx3)',strategy_learned:'var(--blu)',needs_practice:'var(--gld)',mastered:'var(--grn)',needs_review:'var(--red)'};
+function renderQTAHub(){
+  const en=isJosh();
+  const secLabel={listening:en?'🎧 Listening':'🎧 듣기',reading:en?'📖 Reading':'📖 읽기',writing:en?'✍️ Writing':'✍️ 쓰기'};
+  let bySection={listening:[],reading:[],writing:[]};
+  QTA_ORDER.forEach(id=>{ const q=QUESTION_TYPE_ANALYSIS[id]; if(q) bySection[q.section].push(q); });
+  let html=`<div class="hero hero-pur">
+    <div class="hero-title">🎯 ${en?'Question Type Analysis':'Анализ типов заданий'}</div>
+    <div class="hero-sub">${en?'What each question type checks, and how to solve it':'Что проверяет каждый тип задания и как его решать'}</div>
+  </div>`;
+  Object.entries(bySection).forEach(([sec,list])=>{
+    if(!list.length) return;
+    html+=`<div class="card"><div class="card-hdr">${secLabel[sec]}</div>`;
+    list.forEach(q=>{
+      const e=getQTAProgress(q.id);
+      const mastery=computeQTAMastery(e);
+      html+=`<div class="qta-hub-row" onclick="openQTA('${q.id}')">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:0.95em">${q.questionRange} · ${q.title[en?'en':'ru']}</div>
+          <div style="font-size:0.78em;color:var(--tx3)">${q.title.ko}</div>
+        </div>
+        <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;color:#fff;background:${QTA_MASTERY_COLOR[mastery]};flex-shrink:0">${QTA_MASTERY_LABEL[en?'en':'ru'][mastery]}</span>
+      </div>`;
+    });
+    html+=`</div>`;
+  });
+  document.getElementById('content').innerHTML=html;
+}
+
+// ── DETAIL PAGE ──
+function openQTA(id){
+  const q=QUESTION_TYPE_ANALYSIS[id]; if(!q) return;
+  S.page='qta'; S.qtaId=id;
+  S.qtaMini={answered:{},score:0}; // reset mini-practice interaction state
+  document.getElementById('btn-home').style.display='inline-flex';
+  const en=isJosh();
+  document.getElementById('tb-title').textContent='🎯 '+q.title[en?'en':'ru'];
+  document.getElementById('tb-sub').textContent=q.questionRange;
+  buildSidebar();
+  markQTAViewed(id);
+  renderQTAPage(id);
+  window.scrollTo(0,0);
+}
+function qtaBackToHub(){ openQTAHub(); }
+function qtaSection(titleTxt, bodyHtml, open){
+  return `<details ${open?'open':''} class="qta-sec"><summary class="qta-sec-hdr">${titleTxt}</summary><div class="qta-sec-body">${bodyHtml}</div></details>`;
+}
+function renderQTAPage(id){
+  const q=QUESTION_TYPE_ANALYSIS[id]; if(!q) return;
+  const en=isJosh(); const L=en?'en':'ru';
+  const e=getQTAProgress(id);
+
+  let html=`<button class="btn btn-sm" style="margin-bottom:10px" onclick="qtaBackToHub()">← ${en?'All question types':'Все типы заданий'}</button>`;
+
+  html+=`<div class="hero hero-pur">
+    <div style="font-size:11px;opacity:.7;margin-bottom:4px">${en?'유형분석 · Question Type Analysis':'유형분석 · Анализ типа задания'}</div>
+    <div class="hero-title">${q.questionRange} · ${q.title[L]}</div>
+    <div class="hero-sub">${q.title.ko}</div>
+  </div>`;
+
+  // 1-2: what to do / what it tests
+  html+=`<div class="card">
+    <div class="card-hdr">1. ${en?'What you need to do':'Что нужно сделать'}</div>
+    <div style="line-height:1.7;margin-bottom:14px">${q.taskDescription[L]}</div>
+    <div class="card-hdr">2. ${en?'What this checks':'Что проверяет задание'}</div>
+    <div style="line-height:1.7">${q.objective[L]}</div>
+  </div>`;
+
+  // 3: focus point
+  html+=`<div class="rule-box" style="margin-bottom:10px"><div class="rule-lbl">🎯 ${en?'FOCUS':'НА ЧЁМ СОСРЕДОТОЧИТЬСЯ'}</div>${q.focusPoint[L]}</div>`;
+  if(q.focusNote?.[L]) html+=`<div class="feel-box" style="margin-bottom:14px"><div class="feel-lbl">💡 ${en?'Note':'Заметка'}</div>${q.focusNote[L]}</div>`;
+
+  // 4-6: contexts / relationships / speech functions (collapsible, only if non-empty)
+  if(q.commonContexts?.length) html+=qtaSection(`📍 4. ${en?'Common situations':'Типичные ситуации'}`,
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">${q.commonContexts.map(c=>`<span class="qta-chip">${c[L]}</span>`).join('')}</div>`);
+  if(q.relationshipTypes?.length) html+=qtaSection(`👥 5. ${en?'Relationships between speakers':'Отношения между участниками'}`,
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">${q.relationshipTypes.map(c=>`<span class="qta-chip">${c[L]}</span>`).join('')}</div>`);
+  if(q.speechFunctions?.length) html+=qtaSection(`🗣 6. ${en?'Speech functions':'Речевые функции'}`,
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">${q.speechFunctions.map(c=>`<span class="qta-chip">${c.ko} — ${c[L]}</span>`).join('')}</div>`);
+
+  // 7: signal words
+  if(q.signalWords?.length){
+    let body=`<div class="vocab-grid">`;
+    q.signalWords.forEach(s=>{
+      const kr=s.kr.replace(/'/g,"\\'");
+      body+=`<div class="vt" style="cursor:default">
+        <button class="spk-btn" onclick="speak('${kr}')">🔊</button>
+        <div class="vt-kr">${s.kr}</div>
+        <div class="vt-ru">${s[L]}</div>
+        <div class="vt-ctx">${s.function[L]}${s.example?` · «${s.example.kr}»`:''}</div>
+      </div>`;
+    });
+    body+=`</div>`;
+    html+=qtaSection(`🔑 7. ${en?'Signal words & patterns':'Сигнальные слова и конструкции'}`, body, true);
+  }
+
+  // 8: traps
+  if(q.traps?.length) html+=qtaSection(`⚠️ 8. ${en?'Typical traps':'Типичные ловушки'}`,
+    q.traps.map(t=>`<div class="qta-list-item">⚠️ ${t[L]}</div>`).join(''), true);
+
+  // 9: strategy
+  if(q.solvingStrategy?.length) html+=qtaSection(`🧭 9. ${en?'Step-by-step strategy':'Пошаговая стратегия решения'}`,
+    `<ol style="padding-left:18px;line-height:1.9">${q.solvingStrategy.map(s=>`<li>${s[L]}</li>`).join('')}</ol>`, true);
+
+  // common mistakes
+  if(q.commonMistakes?.length) html+=qtaSection(`🚫 ${en?'Common student mistakes':'Типичные ошибки учеников'}`,
+    q.commonMistakes.map(t=>`<div class="qta-list-item">✗ ${t[L]}</div>`).join(''));
+
+  // 10: checklist (interactive)
+  if(q.checklist?.length){
+    let body=`<div style="display:flex;flex-direction:column;gap:6px">`;
+    q.checklist.forEach((c,i)=>{
+      const checked=!!e.checklist[i];
+      body+=`<div class="qta-check ${checked?'checked':''}" id="qta-chk-${i}" onclick="toggleQTAChecklist('${id}',${i})">
+        <span class="qta-check-box">${checked?'✓':''}</span><span>${c[L]}</span>
+      </div>`;
+    });
+    body+=`</div>`;
+    html+=qtaSection(`✅ 10. ${en?'Checklist before you answer':'Чек-лист перед ответом'}`, body, true);
+  }
+
+  // 13: worked example
+  if(q.exampleQuestion){
+    html+=`<div class="card" style="border-left:3px solid var(--pur)">
+      <div class="card-hdr">📋 13. ${en?'Worked example':'Демонстрационный пример'} <span style="font-weight:400;text-transform:none;color:var(--tx3)">(${en?'not scored':'не засчитывается'})</span></div>`;
+    html+=renderQTAExample(q.exampleQuestion, L);
+    html+=`</div>`;
+  }
+
+  // 14: mini practice
+  if(q.miniPractice?.length){
+    html+=`<div class="card"><div class="card-hdr">🧪 14. ${en?'Mini practice':'Мини-тренировка'}</div>
+      <div id="qta-mini-wrap">${renderQTAMiniPractice(id,q,L)}</div></div>`;
+  }
+
+  // 15: continue button
+  const firstLesson=LESSONS.find(l=>QTA_BLOCK_MAP[l.block]===id);
+  html+=`<button class="btn btn-p btn-full lesson-cta" onclick="${firstLesson?`openLesson(${firstLesson.order})`:'goHome()'}">${en?'Go to section lessons →':'Перейти к урокам раздела →'}</button>`;
+
+  document.getElementById('content').innerHTML=html;
+}
+function renderQTAExample(ex,L){
+  const en=L==='en';
+  let html='';
+  if(ex.situation) html+=`<div style="font-size:0.85em;color:var(--tx3);margin-bottom:8px">📍 ${ex.situation[L]}</div>`;
+  if(ex.dialogue){
+    html+=`<div style="margin-bottom:10px">`;
+    ex.dialogue.forEach(d=>{
+      html+=`<div class="ex-item"><div class="ex-kr"><b>${d.sp}:</b> ${d.kr}</div><div class="ex-ru">${d[L]}</div></div>`;
+    });
+    html+=`</div>`;
+  }
+  if(ex.text){
+    html+=`<div class="ex-item" style="margin-bottom:10px"><div class="ex-kr" style="white-space:pre-line">${ex.text.kr}</div><div class="ex-ru" style="white-space:pre-line">${ex.text[L]}</div></div>`;
+  }
+  if(ex.givenSentence){
+    html+=`<div class="usage-box"><b>${en?'Sentence to insert':'Данное предложение'}:</b> ${ex.givenSentence.kr}<br><i>${ex.givenSentence[L]}</i></div>`;
+  }
+  if(ex.options?.length){
+    html+=`<div class="opts" style="margin:10px 0">`;
+    ex.options.forEach((o,i)=>{
+      const isCorrect=i===ex.correctIndex;
+      html+=`<div class="opt" style="cursor:default;${isCorrect?'border-color:var(--grn);background:var(--grnl);font-weight:700':''}">${isCorrect?'✓ ':''}${o[L]||o.ru||o}</div>`;
+    });
+    html+=`</div>`;
+  }
+  if(ex.explanation) html+=`<div class="feel-box"><div class="feel-lbl">✅ ${en?'Why':'Объяснение'}</div>${ex.explanation[L]}</div>`;
+  if(ex.whyOthersWrong) html+=`<div class="contrast-box"><div class="rule-lbl" style="color:var(--red)">✗ ${en?"Why the others don't fit":'Почему остальные не подходят'}</div>${ex.whyOthersWrong[L]}</div>`;
+  if(ex.strategyUsed) html+=`<div class="usage-box">🧭 <b>${en?'Strategy used':'Стратегия'}:</b> ${ex.strategyUsed[L]}</div>`;
+  return html;
+}
+function renderQTAMiniPractice(id,q,L){
+  const en=L==='en';
+  const state=S.qtaMini||{answered:{},score:0};
+  let html='';
+  q.miniPractice.forEach((mp,qi)=>{
+    const answered=state.answered[qi];
+    html+=`<div class="qta-mini-q">
+      <div style="font-weight:600;margin-bottom:8px">${qi+1}. ${mp.q[L]}</div>
+      <div class="opts">`;
+    mp.opts.forEach((o,oi)=>{
+      let cls='opt';
+      if(answered!=null){
+        if(o.correct) cls+=' ok';
+        else if(oi===answered) cls+=' err';
+      }
+      html+=`<button class="${cls}" ${answered!=null?'disabled':''} onclick="qtaPickMini('${id}',${qi},${oi})">${o[L]}</button>`;
+    });
+    html+=`</div></div>`;
+  });
+  const total=q.miniPractice.length;
+  const answeredCount=Object.keys(state.answered).length;
+  if(answeredCount>=total){
+    html+=`<div class="feedback ok" style="display:block;margin-top:10px">${en?'Done':'Готово'}! ${state.score}/${total}</div>`;
+  }
+  return html;
+}
+function qtaPickMini(id,qi,oi){
+  if(!S.qtaMini) S.qtaMini={answered:{},score:0};
+  if(S.qtaMini.answered[qi]!=null) return;
+  const q=QUESTION_TYPE_ANALYSIS[id];
+  const correct=!!q.miniPractice[qi].opts[oi].correct;
+  S.qtaMini.answered[qi]=oi;
+  if(correct) S.qtaMini.score++;
+  const wrap=document.getElementById('qta-mini-wrap');
+  if(wrap) wrap.innerHTML=renderQTAMiniPractice(id,q,isJosh()?'en':'ru');
+  if(Object.keys(S.qtaMini.answered).length>=q.miniPractice.length){
+    const e=getQTAProgress(id);
+    e.miniPractice={score:S.qtaMini.score,total:q.miniPractice.length,pct:Math.round(S.qtaMini.score/q.miniPractice.length*100)};
+    e.mastery=computeQTAMastery(e);
+    persistQTAProgress();
+  }
+}
+
+
 function buildSidebar(){
   const en=isJosh();
   migrateFromDays();
@@ -3113,6 +4494,18 @@ function renderLessonHeader(lesson,en){
   const nGram=getLessonKnownGrammar(lesson).length;
   const mins=Math.min(35,Math.max(15,15+nGram*3+Math.min(nWords,10)));
   const levelLbl=lesson.order<=10?(en?'중급 · Intermediate':'중급 · Intermediate'):lesson.order<=22?(en?'중급-고급 · Upper-Int.':'중급-고급 · Upper-Int.'):(en?'고급 · Advanced':'고급 · Advanced');
+  const qta=getQTAForLesson(lesson);
+  let qtaBlock='';
+  if(qta){
+    const viewed=getQTAProgress(qta.id).viewed;
+    qtaBlock=`<div class="lesson-qta-strip" onclick="openQTA('${qta.id}')">
+      <div>
+        <div class="lesson-qta-strip-type">${lesson.section} ${range} · ${qta.title[en?'en':'ru']}</div>
+        <div class="lesson-qta-strip-skill">${en?'Skill':'Навык'}: ${qta.focusPoint[en?'en':'ru']}</div>
+      </div>
+      <button class="btn btn-sm">${viewed?(en?'Repeat strategy':'Повторить стратегию'):(en?'⚑ Read first':'⚑ Прочитать сначала')}</button>
+    </div>`;
+  }
   return `<div class="lesson-hdr">
     <div class="lesson-hdr-top">
       <span class="lesson-hdr-badge">${lesson.section==='듣기'?'🎧':'📖'} ${lesson.section}${range?` · ${range}`:''}</span>
@@ -3125,6 +4518,7 @@ function renderLessonHeader(lesson,en){
       <span>🔤 ${nWords} ${en?'new words':'новых слов'}</span>
       <span>📐 ${nGram} ${en?'grammar patterns':'грамм. конструкций'}</span>
     </div>
+    ${qtaBlock}
   </div>`;
 }
 
@@ -4800,6 +6194,7 @@ function boot(){
       try{S.notes=JSON.parse(localStorage.getItem('t45-notes')||'{}')}catch(e){S.notes={}}
       try{S.completedLessons=new Set(JSON.parse(localStorage.getItem('t45-completed-lessons')||'[]'))}catch(e){S.completedLessons=new Set()}
       try{S.lessonProgress=JSON.parse(localStorage.getItem('t45-lesson-progress')||'{}')}catch(e){S.lessonProgress={}}
+      try{S.qtaProgress=JSON.parse(localStorage.getItem('t45-qta-progress')||'{}')}catch(e){S.qtaProgress={}}
       S.currentLesson=parseInt(localStorage.getItem('t45-current-lesson')||'1')||1;
       S.streak=computeStreak();
       migrateOldProgress();
