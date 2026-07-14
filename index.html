@@ -459,6 +459,11 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 .qta-hub-row:hover{background:var(--sur2)}
 .qta-mini-q{margin-bottom:16px}
 .qta-mini-q:last-child{margin-bottom:0}
+
+/* ── LANGUAGE TOGGLE ── */
+.lang-bar{display:flex;background:var(--sur2);border-radius:99px;padding:2px;gap:1px}
+.lang-btn{border:none;background:transparent;font-family:"Noto Sans KR",sans-serif;font-size:11px;font-weight:700;padding:5px 10px;border-radius:99px;cursor:pointer;color:var(--tx3);transition:.15s;touch-action:manipulation}
+.lang-btn.active{background:var(--grn);color:#fff}
 </style>
 </head>
 <body>
@@ -497,6 +502,10 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
       <div class="pg-sub" id="tb-sub">Выберите день</div>
     </div>
     <div class="topbar-r">
+      <div class="lang-bar" id="lang-bar">
+        <button class="lang-btn" id="lang-btn-ru" onclick="setLang('ru')">RU</button>
+        <button class="lang-btn" id="lang-btn-en" onclick="setLang('en')">EN</button>
+      </div>
       <div class="fs-bar">
         <button class="fs-btn" onclick="changeFontSize(-1)">A−</button>
         <span class="fs-lbl" id="fs-lbl">15</span>
@@ -522,7 +531,7 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
 const JOSH_EMAILS = ["josh@topik-prep.com"];
 const KATYA_EMAIL = "katya@topik-prep.com";
 const KATYA_CANONICAL_UID = "EDhtvniSLvcAtgGhYklmjOB6Ie92"; // Катя's main UID
-function isJosh(){ return S.currentUser && JOSH_EMAILS.includes(S.currentUser.email); }
+function isJosh(){ if(S.lang) return S.lang==='en'; return S.currentUser && JOSH_EMAILS.includes(S.currentUser.email); }
 function isKatya(){ return S.currentUser && S.currentUser.email === KATYA_EMAIL; }
 function getLang(){ return isJosh() ? 'en' : 'ru'; }
 function getGDB(){ return isJosh() ? GDB_EN : GDB; }
@@ -713,6 +722,7 @@ let S={
   lessonProgress:{}, // {lessonOrder: serialized lesson step-progress} — synced to server
   qtaProgress:{}, // {qtaId: {viewed, checklist, miniPractice, mastery}} — synced to server
   qtaId:null, qtaMini:null,
+  lang: localStorage.getItem('t45-lang')||null, // 'ru' | 'en' | null (null = auto by account)
 };
 function save(){
   localStorage.setItem("t45-done",JSON.stringify([...S.done]));
@@ -768,6 +778,90 @@ function updateExamUI(){
   if(lbl) lbl.textContent='📅 '+(en?'Exam':'Экзамен')+': '+formatExamDate(en);
   const dv=document.getElementById('dday-val');
   if(dv){ const dd=getDDay(); dv.textContent=dd===null?'D-?':(dd>0?'D-'+dd:(dd===0?'D-Day!':'D+'+Math.abs(dd))); }
+}
+
+function updateLangToggleUI(){
+  const en=isJosh();
+  const ru=document.getElementById('lang-btn-ru'), enBtn=document.getElementById('lang-btn-en');
+  if(ru) ru.classList.toggle('active', !en);
+  if(enBtn) enBtn.classList.toggle('active', en);
+}
+function setLang(lang){
+  if(S.lang===lang) return;
+  S.lang=lang;
+  localStorage.setItem('t45-lang', lang);
+  updateLangToggleUI();
+  updateExamUI();
+  updateSidebarLabels();
+  buildSidebar();
+  rerenderCurrentPage();
+}
+// Re-renders whatever screen is currently open, in the (possibly just-changed) language,
+// without resetting in-progress state (running exam, running exercise, etc.)
+function rerenderCurrentPage(){
+  const en=isJosh();
+  switch(S.page){
+    case 'home': renderHome(); break;
+    case 'lesson': {
+      const lesson=getLesson(S.currentLesson);
+      if(lesson){
+        document.getElementById('tb-title').textContent=(lesson.section==='듣기'?'🎧':'📖')+' '+lesson.title;
+        document.getElementById('tb-sub').textContent=lesson.topic||'';
+      }
+      renderLessonPage();
+      break;
+    }
+    case 'day': renderDay(); break;
+    case 'schedule':
+      document.getElementById('tb-title').textContent=en?'📅 TOPIK 2026 Schedule':'📅 Расписание TOPIK 2026';
+      document.getElementById('tb-sub').textContent=en?'Exam dates, registration, results':'Даты экзаменов, регистрация, результаты';
+      renderSchedulePage();
+      break;
+    case 'exam':
+      document.getElementById('tb-title').textContent=T('examTitle');
+      document.getElementById('tb-sub').textContent=T('examSub');
+      renderExamPage();
+      break;
+    case 'teacher': renderTeacherPage(); break;
+    case 'profile':
+      document.getElementById('tb-title').textContent=en?'📊 My Progress':'📊 Мой прогресс';
+      renderStudentProfile();
+      break;
+    case 'progress':
+      document.getElementById('tb-title').textContent=en?'📊 My Progress':'📊 Мой прогресс';
+      renderMyProgress();
+      break;
+    case 'qtahub':
+      document.getElementById('tb-title').textContent=en?'🎯 Question Type Analysis':'🎯 Анализ типов заданий';
+      document.getElementById('tb-sub').textContent=en?'Strategy for every TOPIK II question type':'Стратегия для каждого типа заданий TOPIK II';
+      renderQTAHub();
+      break;
+    case 'qta': {
+      const q=QUESTION_TYPE_ANALYSIS[S.qtaId];
+      if(q){
+        document.getElementById('tb-title').textContent='🎯 '+q.title[en?'en':'ru'];
+        document.getElementById('tb-sub').textContent=q.questionRange;
+      }
+      renderQTAPage(S.qtaId);
+      break;
+    }
+    case 'login': renderLoginPage(); break;
+    default:
+      if(!S.currentUser) renderLoginPage();
+      else if(isTeacher()) renderTeacherPage();
+      else renderHome();
+  }
+}
+function updateSidebarLabels(){
+  const en=isJosh();
+  const map={
+    'sb-progress-btn': en?'📊 My Progress':'📊 Мой прогресс',
+    'sb-qta-btn': en?'🎯 Question Type Analysis':'🎯 Анализ типов заданий',
+    'sb-schedule-btn': en?'📅 TOPIK 2026 Schedule':'📅 Расписание TOPIK 2026',
+    'sb-exam-btn': en?'📝 Practice Test (102nd session)':'📝 Тренировочный тест (102회)',
+    'sb-teacher-btn': en?"👩‍🏫 Teacher's Dashboard":'👩‍🏫 Кабинет учителя',
+  };
+  Object.entries(map).forEach(([id,txt])=>{ const el=document.getElementById(id); if(el) el.textContent=txt; });
 }
 
 function toggleSidebar(){
@@ -4355,6 +4449,8 @@ function buildSidebar(){
   const en=isJosh();
   migrateFromDays();
   updateExamUI();
+  updateSidebarLabels();
+  updateLangToggleUI();
 
   // Update header
   const done=(S.completedLessons||new Set()).size;
@@ -6013,19 +6109,22 @@ function isTeacher(){
 }
 
 function renderLoginPage(){
+  S.page='login';
+  const en=isJosh();
   document.getElementById('btn-home').style.display='none';
   const lb=document.getElementById('btn-logout');if(lb){lb.style.display='none';lb.style.visibility='hidden';};
   document.getElementById('tb-title').textContent='TOPIK II 🇰🇷';
-  document.getElementById('tb-sub').textContent='Войдите чтобы начать';
+  document.getElementById('tb-sub').textContent=en?'Sign in to get started':'Войдите чтобы начать';
+  updateLangToggleUI();
   document.getElementById('content').innerHTML=`
     <div style="max-width:360px;margin:32px auto">
       <div class="hero hero-grn" style="text-align:center;margin-bottom:20px;padding:28px">
         <div style="font-size:40px;margin-bottom:8px">🇰🇷</div>
         <div style="font-size:22px;font-weight:700;margin-bottom:4px">TOPIK II</div>
-        <div style="font-size:13px;opacity:.75">Подготовка к экзамену TOPIK</div>
+        <div style="font-size:13px;opacity:.75">${en?'Preparing for the TOPIK exam':'Подготовка к экзамену TOPIK'}</div>
       </div>
       <div class="card">
-        <div class="card-hdr">Вход в систему</div>
+        <div class="card-hdr">${en?'Sign In':'Вход в систему'}</div>
         <div style="margin-bottom:14px">
           <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:5px">Email</label>
           <input id="auth-email" type="email" placeholder="your@email.com" autocomplete="email"
@@ -6033,17 +6132,17 @@ function renderLoginPage(){
             onkeydown="if(event.key==='Enter')document.getElementById('auth-pass').focus()">
         </div>
         <div style="margin-bottom:18px">
-          <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:5px">Пароль</label>
+          <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:5px">${en?'Password':'Пароль'}</label>
           <input id="auth-pass" type="password" placeholder="••••••••" autocomplete="current-password"
             style="width:100%;padding:11px 13px;border:1px solid var(--bdr);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg);-webkit-appearance:none"
             onkeydown="if(event.key==='Enter')doLogin()">
         </div>
         <div id="auth-err" style="color:var(--red);font-size:13px;margin-bottom:12px;display:none;padding:8px 12px;background:var(--redl);border-radius:var(--r)"></div>
-        <button class="btn btn-p btn-full" onclick="doLogin()" id="login-btn">Войти →</button>
-        <button class="btn btn-full" onclick="doRegister()" id="reg-btn" style="margin-top:8px;background:transparent;border:1px solid var(--bdr);color:var(--tx2)">Зарегистрироваться</button>
+        <button class="btn btn-p btn-full" onclick="doLogin()" id="login-btn">${en?'Sign In →':'Войти →'}</button>
+        <button class="btn btn-full" onclick="doRegister()" id="reg-btn" style="margin-top:8px;background:transparent;border:1px solid var(--bdr);color:var(--tx2)">${en?'Register':'Зарегистрироваться'}</button>
       </div>
       <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--tx3)">
-        Если забыли пароль — обратитесь к учителю
+        ${en?'Forgot your password? Contact your teacher.':'Если забыли пароль — обратитесь к учителю'}
       </div>
     </div>`;
   setTimeout(()=>document.getElementById('auth-email')?.focus(),150);
