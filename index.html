@@ -455,7 +455,7 @@ textarea,input[type="text"],input[type="email"],input[type="password"] {
   <div class="logo">
     <div class="logo-main">TOPIK II <span class="logo-badge">β</span></div>
     <div class="logo-sub">Подготовка к TOPIK</div>
-    <div class="logo-exam">📅 Экзамен: 5 июля 2026</div>
+    <div class="logo-exam" id="logo-exam">📅 Экзамен: 5 июля 2026</div>
     <div class="logo-bar"><div class="logo-bar-fill" id="sb-prog" style="width:0%"></div></div>
   </div>
   <div class="nav" id="sb-nav"></div>
@@ -636,7 +636,8 @@ function freshLessonState(order){
     finalTestResult:null,// {score,total,pct}
     attempts:{practice:0,miniTest:0,lessonTest:0},
     timeSpentSec:0,
-    stepStartedAt:null
+    stepStartedAt:null,
+    vFlipped:new Set()
   };
 }
 // Strip transient/runtime-only fields (the live exercise runner) before sending to the server
@@ -695,6 +696,56 @@ function save(){
 }
 
 // ── SIDEBAR TOGGLE (mobile) ──
+// ── TOPIK EXAM SESSIONS (selectable by the student — see selectExamSession) ──
+const EXAM_PBT=[
+  {id:'PBT-104',session:'104회',reg:'9–15 Dec 2025',test:'11 Jan 2026',overseas:'—',results:'12 Feb 2026',testISO:'2026-01-11'},
+  {id:'PBT-105',session:'105회',reg:'27 Jan–2 Feb 2026',test:'12 Apr 2026',overseas:'11–12 Apr',results:'29 May 2026',testISO:'2026-04-12'},
+  {id:'PBT-106',session:'106회',reg:'10–16 Mar 2026',test:'17 May 2026',overseas:'17 May',results:'25 Jun 2026',testISO:'2026-05-17'},
+  {id:'PBT-107',session:'107회',reg:'12–18 May 2026',test:'5 Jul 2026',overseas:'4–5 Jul',results:'13 Aug 2026',testISO:'2026-07-05'},
+  {id:'PBT-108',session:'108회',reg:'4–10 Aug 2026',test:'18 Oct 2026',overseas:'17–18 Oct',results:'10 Dec 2026',testISO:'2026-10-18'},
+  {id:'PBT-109',session:'109회',reg:'1–7 Sep 2026',test:'15 Nov 2026',overseas:'15 Nov',results:'22 Dec 2026',testISO:'2026-11-15'},
+];
+const EXAM_IBT=[
+  {id:'IBT-11',session:'IBT 11',reg:'16–22 Dec 2025',test:'28 Feb 2026',results:'20 Mar 2026',testISO:'2026-02-28'},
+  {id:'IBT-12',session:'IBT 12',reg:'13–19 Jan 2026',test:'21 Mar 2026',results:'10 Apr 2026',testISO:'2026-03-21'},
+  {id:'IBT-13',session:'IBT 13',reg:'7–13 Apr 2026',test:'13 Jun 2026',results:'3 Jul 2026',testISO:'2026-06-13'},
+  {id:'IBT-14',session:'IBT 14',reg:'7–13 Jul 2026',test:'12 Sep 2026',results:'2 Oct 2026',testISO:'2026-09-12'},
+  {id:'IBT-15',session:'IBT 15',reg:'18–24 Aug 2026',test:'24 Oct 2026',results:'13 Nov 2026',testISO:'2026-10-24'},
+  {id:'IBT-16',session:'IBT 16',reg:'15–21 Sep 2026',test:'28 Nov 2026',results:'18 Dec 2026',testISO:'2026-11-28'},
+];
+const EXAM_DEFAULT_ID='PBT-107';
+function findExamSession(id){ return EXAM_PBT.find(s=>s.id===id)||EXAM_IBT.find(s=>s.id===id); }
+function getExamInfo(){
+  if(S.examInfo && S.examInfo.testISO) return S.examInfo;
+  const def=findExamSession(EXAM_DEFAULT_ID);
+  return {type:'PBT', id:def.id, session:def.session, testISO:def.testISO};
+}
+function formatExamDate(en){
+  const info=getExamInfo();
+  const d=new Date(info.testISO+'T00:00:00');
+  return d.toLocaleDateString(en?'en-US':'ru-RU',{day:'numeric',month:'long',year:'numeric'});
+}
+function selectExamSession(type,id){
+  const found=findExamSession(id);
+  if(!found) return;
+  S.examInfo={type, id:found.id, session:found.session, testISO:found.testISO};
+  try{
+    const cached=JSON.parse(localStorage.getItem('t45-data')||'{}');
+    cached.examInfo=S.examInfo;
+    localStorage.setItem('t45-data', JSON.stringify(cached));
+  }catch(e){}
+  save(); queueSave();
+  updateExamUI();
+  if(S.page==='schedule') renderSchedulePage();
+}
+function updateExamUI(){
+  const en=isJosh();
+  const lbl=document.getElementById('logo-exam');
+  if(lbl) lbl.textContent='📅 '+(en?'Exam':'Экзамен')+': '+formatExamDate(en);
+  const dv=document.getElementById('dday-val');
+  if(dv){ const dd=getDDay(); dv.textContent=dd===null?'D-?':(dd>0?'D-'+dd:(dd===0?'D-Day!':'D+'+Math.abs(dd))); }
+}
+
 function toggleSidebar(){
   document.getElementById("sidebar").classList.toggle("open");
   document.getElementById("sb-overlay").classList.toggle("show");
@@ -718,28 +769,16 @@ function openSchedule(){
 
 function renderSchedulePage(){
   const isEn=isJosh();
-  const PBT=[
-    {session:'104회',reg:'9–15 Dec 2025',test:'11 Jan 2026',overseas:'—',results:'12 Feb 2026',past:true},
-    {session:'105회',reg:'27 Jan–2 Feb 2026',test:'12 Apr 2026',overseas:'11–12 Apr',results:'29 May 2026',past:true},
-    {session:'106회',reg:'10–16 Mar 2026',test:'17 May 2026',overseas:'17 May',results:'25 Jun 2026',past:true},
-    {session:'107회 ⭐',reg:'12–18 May 2026',test:'5 Jul 2026',overseas:'4–5 Jul',results:'13 Aug 2026',current:true},
-    {session:'108회',reg:'4–10 Aug 2026',test:'18 Oct 2026',overseas:'17–18 Oct',results:'10 Dec 2026'},
-    {session:'109회',reg:'1–7 Sep 2026',test:'15 Nov 2026',overseas:'15 Nov',results:'22 Dec 2026'},
-  ];
-  const IBT=[
-    {session:'IBT 11',reg:'16–22 Dec 2025',test:'28 Feb 2026',results:'20 Mar 2026',past:true},
-    {session:'IBT 12',reg:'13–19 Jan 2026',test:'21 Mar 2026',results:'10 Apr 2026',past:true},
-    {session:'IBT 13',reg:'7–13 Apr 2026',test:'13 Jun 2026',results:'3 Jul 2026',past:true},
-    {session:'IBT 14',reg:'7–13 Jul 2026',test:'12 Sep 2026',results:'2 Oct 2026'},
-    {session:'IBT 15',reg:'18–24 Aug 2026',test:'24 Oct 2026',results:'13 Nov 2026'},
-    {session:'IBT 16',reg:'15–21 Sep 2026',test:'28 Nov 2026',results:'18 Dec 2026'},
-  ];
+  const info=getExamInfo();
+  const today=new Date(); today.setHours(0,0,0,0);
 
   const regLabel=isEn?'Registration':'Регистрация';
   const testLabel=isEn?'Test Date':'Дата теста';
   const overseasLabel=isEn?'Overseas':'Заграница';
   const resultsLabel=isEn?'Results':'Результаты';
   const sessionLabel=isEn?'Session':'Сессия';
+  const chosenLabel=isEn?'Chosen':'Выбрано';
+  const chooseLabel=isEn?'Choose':'Выбрать';
 
   // Josh specific: registration button + tip
   const joshBlock=isEn?`
@@ -747,7 +786,7 @@ function renderSchedulePage(){
       <div class="card-hdr">🍁 Register for TOPIK</div>
       <div style="font-size:var(--fs);line-height:1.7;margin-bottom:14px">
         TOPIK is available in <strong>Canada</strong> — check your nearest Korean Culture Centre or consulate for local registration dates.<br>
-        The next overseas session is <strong>107회 · July 5, 2026</strong>. Registration opens May 12.
+        Your chosen session is <strong>${info.session} · ${formatExamDate(true)}</strong>.
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a href="https://www.topik.go.kr" target="_blank" class="btn btn-p btn-sm">🌐 topik.go.kr (Official)</a>
@@ -759,12 +798,12 @@ function renderSchedulePage(){
     <div class="card" style="border-left:4px solid var(--grn);margin-bottom:14px">
       <div class="card-hdr">⭐ Твой экзамен</div>
       <div style="font-size:var(--fs);line-height:1.7">
-        Ты зарегистрирована на <strong>107회 · 5 июля 2026</strong>.<br>
-        Результаты будут 13 августа 2026 на <a href="https://www.topik.go.kr" target="_blank" style="color:var(--grn)">topik.go.kr</a>.
+        Ты выбрала <strong>${info.session} · ${formatExamDate(false)}</strong>.<br>
+        Хочешь готовиться к другой сессии — нажми «${chooseLabel}» в таблице ниже.
       </div>
     </div>`:'';
 
-  const makeTable=(rows,overseas=false)=>{
+  const makeTable=(rows,type,overseas=false)=>{
     let t=`<div style="overflow-x:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="background:var(--sur2)">
         <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--bdr);white-space:nowrap">${sessionLabel}</th>
@@ -772,16 +811,24 @@ function renderSchedulePage(){
         <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--bdr);white-space:nowrap">${testLabel}</th>
         ${overseas?`<th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--bdr);white-space:nowrap">${overseasLabel}</th>`:''}
         <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--bdr);white-space:nowrap">${resultsLabel}</th>
+        <th style="padding:8px 10px;text-align:left;border-bottom:2px solid var(--bdr);white-space:nowrap"></th>
       </tr></thead><tbody>`;
     rows.forEach(r=>{
-      const bg=r.current?'background:var(--grnl);font-weight:700':r.past?'opacity:.5':'';
-      const pastNote=r.past?(isEn?' (past)':' (прошёл)'):'';
+      const isCurrent=info.id===r.id;
+      const isPast=new Date(r.testISO+'T00:00:00')<today;
+      const bg=isCurrent?'background:var(--grnl);font-weight:700':isPast?'opacity:.5':'';
+      const pastNote=isPast?(isEn?' (past)':' (прошёл)'):'';
       t+=`<tr style="${bg}">
-        <td style="padding:8px 10px;border-bottom:1px solid var(--bdrl)">${r.session}${pastNote}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid var(--bdrl)">${isCurrent?'⭐ ':''}${r.session}${pastNote}</td>
         <td style="padding:8px 10px;border-bottom:1px solid var(--bdrl);white-space:nowrap">${r.reg}</td>
         <td style="padding:8px 10px;border-bottom:1px solid var(--bdrl);white-space:nowrap">${r.test}</td>
         ${overseas?`<td style="padding:8px 10px;border-bottom:1px solid var(--bdrl);white-space:nowrap">${r.overseas||'—'}</td>`:''}
         <td style="padding:8px 10px;border-bottom:1px solid var(--bdrl);white-space:nowrap">${r.results}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid var(--bdrl);white-space:nowrap">${
+          isCurrent
+            ? `<span style="font-size:11px;font-weight:700;color:var(--grn)">✓ ${chosenLabel}</span>`
+            : `<button class="btn btn-sm" onclick="selectExamSession('${type}','${r.id}')">${chooseLabel}</button>`
+        }</td>
       </tr>`;
     });
     t+=`</tbody></table></div>`;
@@ -799,9 +846,9 @@ function renderSchedulePage(){
     <div class="card">
       <div class="card-hdr">📝 PBT — ${isEn?'Paper-Based Test (Overseas available)':'Бумажный тест (доступен заграницей)'}</div>
       <div style="font-size:12px;color:var(--tx3);margin-bottom:10px">
-        ${isEn?'⭐ = Your target session (July 5)':'⭐ = Твой экзамен (5 июля)'}
+        ${isEn?`⭐ = Your chosen session (${info.session})`:`⭐ = Твой выбранный экзамен (${info.session})`}
       </div>
-      ${makeTable(PBT,true)}
+      ${makeTable(EXAM_PBT,'PBT',true)}
       <div style="font-size:12px;color:var(--tx3)">
         ${isEn?'International registration dates may differ — check with your local Korean embassy or Culture Centre.':'Даты регистрации за рубежом могут отличаться — уточняйте в посольстве или Культурном центре Кореи.'}
       </div>
@@ -809,7 +856,7 @@ function renderSchedulePage(){
 
     <div class="card">
       <div class="card-hdr">💻 IBT — ${isEn?'Internet-Based Test (Korea + select countries)':'Компьютерный тест (Корея + отдельные страны)'}</div>
-      ${makeTable(IBT,false)}
+      ${makeTable(EXAM_IBT,'IBT',false)}
       <div style="font-size:12px;color:var(--tx3)">
         ${isEn?'IBT results in ~3 weeks (faster than PBT). Available in Korea, Vietnam, Uzbekistan, Philippines, USA (Guam), and more.':'Результаты IBT за ~3 недели (быстрее PBT). Доступен в Корее, Вьетнаме, Узбекистане, Филиппинах, США (Гуам) и других странах.'}
       </div>
@@ -862,7 +909,7 @@ async function loadFromFirebase(){
     S.done = new Set(data.done||[]);
     S.mistakes = data.mistakes||{};
     S.dayLog = data.day_log||{};
-    S.examInfo = data.exam_info||null;
+    S.examInfo = data.exam_info || S.examInfo || null;
     const _srv=data.srs||{}; S.srs={..._srv,...Object.fromEntries(Object.entries(S.srs||{}).filter(([k])=>!_srv[k]))};
     localStorage.setItem('t45-srs',JSON.stringify(S.srs));
     if(data.mistake_log?.length) S.mistakeLog=data.mistake_log;
@@ -2926,6 +2973,7 @@ function migrateFromDays(){
 function buildSidebar(){
   const en=isJosh();
   migrateFromDays();
+  updateExamUI();
 
   // Update header
   const done=(S.completedLessons||new Set()).size;
@@ -3176,8 +3224,12 @@ function highlightForm(kr,form){
 function renderExamplesStep(lesson,en){
   const _gdb=getGDB();
   const forms=getLessonKnownGrammar(lesson);
-  if(!forms.length) return noStepData(en);
-  let html=`<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+  let html=renderLessonVocabGrid(lesson,en);
+  if(!forms.length){
+    html+=`<button class="btn btn-p lesson-cta btn-full" onclick="goToNextLessonStep()">${en?'Start practice →':'Начать практику →'}</button>`;
+    return html;
+  }
+  html+=`<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
     <button class="btn btn-sm" onclick="toggleLessonTranslation()">${S.lesson.showTranslation?(en?'Hide translation':'Скрыть перевод'):(en?'Show translation':'Показать перевод')}</button>
   </div>`;
   forms.forEach(form=>{
@@ -3198,6 +3250,32 @@ function renderExamplesStep(lesson,en){
   });
   html+=`<button class="btn btn-p lesson-cta btn-full" onclick="goToNextLessonStep()">${en?'Start practice →':'Начать практику →'}</button>`;
   return html;
+}
+function renderLessonVocabGrid(lesson,en){
+  const words=lesson.vocab||[];
+  if(!words.length) return '';
+  if(!S.lesson.vFlipped) S.lesson.vFlipped=new Set();
+  let html=`<div class="card"><div class="card-hdr">🔤 ${en?'New words':'Новые слова'} (${words.length})</div>
+  <div style="font-size:0.85em;color:var(--tx2);margin-bottom:10px">${en?'Tap a card to reveal the translation. 🔊 — listen.':'Нажмите на карточку — увидите перевод. 🔊 — прослушать.'}</div>
+  <div class="vocab-grid">`;
+  words.forEach((w,i)=>{
+    const fl=S.lesson.vFlipped.has(i);
+    const kr=w.kr.replace(/'/g,"\\'");
+    const meaning=en?(w.en||w.ru):w.ru;
+    html+=`<div class="vt ${fl?'flip':''}" onclick="lessonFlipV(${i})">
+      <button class="spk-btn" onclick="event.stopPropagation();speak('${kr}')">🔊</button>
+      <div class="vt-kr">${w.kr}</div>
+      <div class="vt-ru" style="color:${fl?'var(--grn)':'var(--tx3)'}">${fl?meaning:'?'}</div>
+      ${fl&&w.ctx?`<div class="vt-ctx">${en?(w.ctx_en||w.ctx):w.ctx}</div>`:''}
+    </div>`;
+  });
+  html+=`</div></div>`;
+  return html;
+}
+function lessonFlipV(i){
+  if(!S.lesson.vFlipped) S.lesson.vFlipped=new Set();
+  if(S.lesson.vFlipped.has(i)) S.lesson.vFlipped.delete(i); else S.lesson.vFlipped.add(i);
+  renderLessonPage();
 }
 function toggleLessonTranslation(){ S.lesson.showTranslation=!S.lesson.showTranslation; renderLessonPage(); }
 
@@ -3492,7 +3570,7 @@ function renderHome(){
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;flex:1;min-width:130px">
         <div style="font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">${T("daysLeft")}</div>
         <div id="dday-val" style="font-size:calc(var(--fs) + 19px);font-weight:700;color:#fff;line-height:1">D-${dday}</div>
-        <div style="font-size:11px;opacity:.45;margin-top:4px">${T("examDate")}</div>
+        <div style="font-size:11px;opacity:.45;margin-top:4px">${formatExamDate(en)}</div>
       </div>
       <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:12px 14px;flex:1;min-width:130px;display:flex;align-items:center;gap:10px">
         <svg width="80" height="80" viewBox="0 0 88 88" style="flex-shrink:0">
@@ -4505,7 +4583,7 @@ function shuffle(a){return[...a].sort(()=>Math.random()-.5);}
 
 // ── D-DAY COUNTER ──
 function getDDay(){
-  const exam=new Date('2026-07-05T00:00:00');
+  const exam=new Date(getExamInfo().testISO+'T00:00:00');
   const now=new Date();
   now.setHours(0,0,0,0);
   const diff=Math.ceil((exam-now)/(1000*60*60*24));
@@ -4550,7 +4628,7 @@ function renderLoginPage(){
       <div class="hero hero-grn" style="text-align:center;margin-bottom:20px;padding:28px">
         <div style="font-size:40px;margin-bottom:8px">🇰🇷</div>
         <div style="font-size:22px;font-weight:700;margin-bottom:4px">TOPIK II</div>
-        <div style="font-size:13px;opacity:.75">Подготовка к экзамену · 5 июля 2026</div>
+        <div style="font-size:13px;opacity:.75">Подготовка к экзамену TOPIK</div>
       </div>
       <div class="card">
         <div class="card-hdr">Вход в систему</div>
