@@ -4929,7 +4929,7 @@ function renderLessonVocabGrid(lesson,en){
   const words=lesson.vocab||[];
   if(!words.length) return '';
   if(!S.lesson.vFlipped) S.lesson.vFlipped=new Set();
-  let html=`<div class="card"><div class="card-hdr">🔤 ${en?'New words':'Новые слова'} (${words.length})</div>
+  let html=`<div class="card"><div class="card-hdr">🔤 ${en?'Vocabulary':'Слова'} (${words.length})</div>
   <div style="font-size:0.85em;color:var(--tx2);margin-bottom:10px">${en?'Tap a card to reveal the translation. 🔊 — listen.':'Нажмите на карточку — увидите перевод. 🔊 — прослушать.'}</div>
   <div class="vocab-grid">`;
   words.forEach((w,i)=>{
